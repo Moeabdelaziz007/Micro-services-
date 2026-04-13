@@ -32,6 +32,21 @@
       "type": "object",
       "properties": {
         "patterns": { "type": "array", "items": { "type": "string" }, "description": "Learned patterns or preferences" },
+        "agentFeedback": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "agentId": { "type": "string" },
+              "agentName": { "type": "string" },
+              "rating": { "type": "number" },
+              "comment": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "sessionId": { "type": "string" }
+            }
+          }, 
+          "description": "User feedback on individual sub-agent performance" 
+        },
         "notes": { "type": "string", "description": "General notes for the agent" },
         "uid": { "type": "string", "description": "The user ID who owns this memory" }
       },

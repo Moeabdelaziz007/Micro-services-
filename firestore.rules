@@ -35,7 +35,9 @@ service cloud.firestore {
 
     function isValidMemory(data) {
       return data.uid == request.auth.uid &&
-             data.patterns is list;
+             data.patterns is list &&
+             (!('agentFeedback' in data) || data.agentFeedback is list) &&
+             (!('notes' in data) || data.notes is string);
     }
 
     // ===============================================================
