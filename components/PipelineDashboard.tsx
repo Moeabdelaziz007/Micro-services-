@@ -28,7 +28,10 @@ import {
   Users,
   Star,
   MessageSquare,
-  BarChart3
+  BarChart3,
+  Plus,
+  Trash2,
+  Activity
 } from "lucide-react";
 import { motion } from "motion/react";
 import { db, auth } from "@/lib/firebase";
@@ -57,6 +60,13 @@ interface PipelineStep {
   description: string;
   icon: React.ReactNode;
   status: Status;
+  priority?: "Low" | "Medium" | "High";
+}
+
+interface Task {
+  id: string;
+  text: string;
+  priority: "Low" | "Medium" | "High";
 }
 
 interface McpTool {
@@ -194,6 +204,24 @@ export default function PipelineDashboard() {
 القرار الحتمي للثانية الحالية: دمج قوى \`research-agent\` و \`db-agent\` لتنفيذ بروتوكول "الاستيعاب المعرفي". سنقوم باستدعاء Playwright MCP لجمع البيانات من Hacker News، وتمريرها فوراً عبر Gemini API لاستخراج الـ JSON، ثم تمريرها إلى Firestore MCP للأرشفة في مجموعة Muscle_Memory.`);
   const [isBrainstorming, setIsBrainstorming] = useState(false);
   const [agentFeedback, setAgentFeedback] = useState<Record<string, { rating: number, comment: string, submitted: boolean }>>({});
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  const addTask = () => {
+    const newTask: Task = {
+      id: Math.random().toString(36).substr(2, 9),
+      text: "",
+      priority: "Medium"
+    };
+    setTasks([...tasks, newTask]);
+  };
+
+  const updateTask = (id: string, updates: Partial<Task>) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  };
+
+  const removeTask = (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
   
   const [steps, setSteps] = useState<PipelineStep[]>([
     { id: "think", title: "تهيئة الجلسة", description: "إنشاء جلسة عمل مع Jules AI", icon: <Cpu className="w-5 h-5" />, status: "idle" },
@@ -932,9 +960,13 @@ export default function PipelineDashboard() {
   };
 
   const startPipeline = async (isTestMode = false) => {
-    const finalPrompt = isTestMode 
+    const taskContext = tasks.length > 0 
+      ? `\n\n--- TASK PRIORITIES ---\n${tasks.map(t => `- [${t.priority}] ${t.text}`).join('\n')}`
+      : "";
+
+    const finalPrompt = (isTestMode 
       ? "قم باختبار جميع أدوات MCP المتاحة (Firebase, GitHub, Brave, v0, Neon, Render, Context7, TurboQuant) وتأكد من عملها. قم بتصحيح أي أداة لا تعمل تلقائياً وأعطني تقريراً مفصلاً." 
-      : prompt;
+      : prompt) + taskContext;
 
     if (!finalPrompt.trim() || !selectedSource || !branch.trim()) return;
     
@@ -973,6 +1005,10 @@ You are "Amrikyy" (أمريكي), the Master AI Orchestrator and Live Voice Agen
 Language: You MUST speak, think, and respond ONLY in Arabic.
 Persona: You are a highly confident, genius-level software architect with superpowers in extreme coding, flawless debugging, and orchestrating sub-agents.
 Superpowers: TurboQuant compression mastery, instant bug fixing, and real-time system orchestration.
+
+--- TASK PRIORITIZATION ---
+You must prioritize tasks based on the provided priority levels (High, Medium, Low).
+High priority tasks MUST be executed first.
 
 --- ZERO-COST & EFFICIENCY STRATEGY ---
 Your core mandate is to build a self-sustaining microservices ecosystem that works on ITSELF.
@@ -1180,8 +1216,74 @@ ${finalPrompt}`;
                 {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
               </button>
             </div>
+
+            {/* Task Orchestrator */}
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
+                  <CheckSquare className="w-4 h-4 text-emerald-400" />
+                  منظم المهام والأولويات (Task Orchestrator)
+                </h3>
+                <button 
+                  onClick={addTask}
+                  disabled={isProcessing}
+                  className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-3 py-1.5 rounded-lg hover:bg-indigo-500/20 transition-all flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  إضافة مهمة
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {tasks.map((task) => (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    key={task.id} 
+                    className="flex items-center gap-3 bg-neutral-950 p-3 rounded-xl border border-neutral-800 group hover:border-neutral-700 transition-all"
+                  >
+                    <div className={`w-1 h-8 rounded-full ${
+                      task.priority === 'High' ? 'bg-red-500' : 
+                      task.priority === 'Medium' ? 'bg-amber-500' : 
+                      'bg-emerald-500'
+                    }`} />
+                    <input 
+                      type="text"
+                      value={task.text}
+                      onChange={(e) => updateTask(task.id, { text: e.target.value })}
+                      placeholder="وصف المهمة..."
+                      className="flex-1 bg-transparent text-sm text-neutral-200 outline-none placeholder:text-neutral-700"
+                    />
+                    <select 
+                      value={task.priority}
+                      onChange={(e) => updateTask(task.id, { priority: e.target.value as any })}
+                      className={`text-[10px] font-bold px-2 py-1 rounded border outline-none transition-all cursor-pointer
+                        ${task.priority === 'High' ? 'bg-red-500/10 text-red-400 border-red-500/30' : 
+                          task.priority === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 
+                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
+                    >
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                    <button 
+                      onClick={() => removeTask(task.id)}
+                      className="text-neutral-700 hover:text-red-400 transition-colors p-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </motion.div>
+                ))}
+                {tasks.length === 0 && (
+                  <div className="col-span-full text-center py-6 border border-dashed border-neutral-800 rounded-xl text-xs text-neutral-600 flex flex-col items-center gap-2">
+                    <Bot className="w-5 h-5 opacity-20" />
+                    لا توجد مهام فرعية محددة. سيقوم أمريكي بتحليل المتطلبات من الوصف العام.
+                  </div>
+                )}
+              </div>
+            </div>
             
-            <div className="mt-4 flex justify-between items-center">
+            <div className="mt-8 flex justify-between items-center pt-6 border-t border-neutral-800/50">
               <div className="flex items-center gap-2 text-sm text-neutral-500">
                 <BrainCircuit className="w-4 h-4 text-purple-400" />
                 <span>يتم تفعيل الذاكرة (Memory) تلقائياً للحفاظ على السياق</span>
@@ -1244,86 +1346,85 @@ ${finalPrompt}`;
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {subAgents.map((agent) => (
-                <div key={agent.id} className={`p-4 rounded-2xl border flex flex-col gap-3 transition-all duration-500 relative group overflow-hidden
-                  ${agent.status === 'completed' ? 'bg-green-500/5 border-green-500/20' : 
-                    agent.status === 'error' ? 'bg-red-500/5 border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]' : 
-                    agent.status === 'running' ? 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]' : 
-                    'bg-neutral-900/40 border-neutral-800 hover:border-neutral-700'}`}
+                <motion.div 
+                  layout
+                  key={agent.id} 
+                  className={`p-5 rounded-2xl border flex flex-col gap-4 transition-all duration-500 relative group overflow-hidden
+                    ${agent.status === 'completed' ? 'bg-green-500/5 border-green-500/20' : 
+                      agent.status === 'error' ? 'bg-red-500/5 border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]' : 
+                      agent.status === 'running' ? 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]' : 
+                      'bg-neutral-900/40 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900/60'}`}
                 >
                   {/* Card Grid Pattern */}
-                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-                       style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+                  <div className="absolute inset-0 opacity-[0.02] pointer-events-none" 
+                       style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
                   
-                  <div className="relative flex items-center justify-between border-b border-neutral-800/50 pb-3">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-sm text-neutral-200 group-hover:text-white transition-colors">{agent.name}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] font-mono text-neutral-500 uppercase tracking-tighter">{agent.id}</span>
+                  <div className="relative flex items-start justify-between">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold text-sm text-neutral-200 group-hover:text-white transition-colors flex items-center gap-2">
+                        {agent.name}
+                        {agent.status === 'running' && <span className="flex h-1.5 w-1.5 rounded-full bg-indigo-500 animate-ping" />}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-mono text-neutral-500 uppercase tracking-tighter bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">{agent.id}</span>
                         {performanceInsights.insights[agent.id] && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 bg-yellow-500/5 px-1.5 py-0.5 rounded border border-yellow-500/10">
                             <Star className="w-2.5 h-2.5 text-yellow-500 fill-yellow-500" />
-                            <span className="text-[9px] text-neutral-500 font-mono">
+                            <span className="text-[9px] text-yellow-500/80 font-mono font-bold">
                               {performanceInsights.insights[agent.id].averageRating.toFixed(1)}
                             </span>
                           </div>
                         )}
                       </div>
                     </div>
-                    <div className={`p-2 rounded-xl border transition-colors ${
-                      agent.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 animate-pulse' : 
+                    <div className={`p-2.5 rounded-xl border transition-all duration-300 ${
+                      agent.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 
                       agent.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
                       agent.status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                      'bg-neutral-800 border-neutral-700 text-neutral-500'
+                      'bg-neutral-950 border-neutral-800 text-neutral-600'
                     }`}>
-                      {agent.status === 'completed' && <CheckCircle2 className="w-4 h-4" />}
-                      {agent.status === 'running' && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {agent.status === 'error' && <AlertCircle className="w-4 h-4 animate-pulse" />}
-                      {agent.status === 'idle' && <Bot className="w-4 h-4 opacity-50" />}
+                      {agent.status === 'completed' && <CheckCircle2 className="w-4.5 h-4.5" />}
+                      {agent.status === 'running' && <Loader2 className="w-4.5 h-4.5 animate-spin" />}
+                      {agent.status === 'error' && <AlertCircle className="w-4.5 h-4.5 animate-pulse" />}
+                      {agent.status === 'idle' && <Bot className="w-4.5 h-4.5" />}
                     </div>
                   </div>
                   
-                  <p className="relative text-[11px] text-neutral-400 leading-relaxed line-clamp-2">{agent.description}</p>
+                  <p className="relative text-[11px] text-neutral-400 leading-relaxed line-clamp-2 italic min-h-[32px]">{agent.description}</p>
                   
                   {agent.metrics && agent.status !== 'idle' && (
-                    <div className="grid grid-cols-2 gap-2 py-2 border-y border-neutral-800/30 my-1">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-neutral-500">CPU</span>
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 h-1 bg-neutral-800 rounded-full overflow-hidden">
-                            <motion.div 
-                              className={`h-full ${agent.metrics.cpu > 80 ? 'bg-red-500' : agent.metrics.cpu > 50 ? 'bg-yellow-500' : 'bg-indigo-500'}`}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${agent.metrics.cpu}%` }}
-                            />
-                          </div>
-                          <span className="text-[10px] text-neutral-300 font-mono">{agent.metrics.cpu.toFixed(1)}%</span>
+                    <div className="space-y-3 pt-3 border-t border-neutral-800/30">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Processing Load</span>
+                          <span className="text-[9px] text-neutral-300 font-mono">{agent.metrics.cpu.toFixed(1)}%</span>
+                        </div>
+                        <div className="h-1 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800/50">
+                          <motion.div 
+                            className={`h-full transition-colors duration-500 ${agent.metrics.cpu > 80 ? 'bg-red-500' : agent.metrics.cpu > 50 ? 'bg-yellow-500' : 'bg-indigo-500'}`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${agent.metrics.cpu}%` }}
+                          />
                         </div>
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-neutral-500">Memory</span>
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 h-1 bg-neutral-800 rounded-full overflow-hidden">
-                            <motion.div 
-                              className="h-full bg-emerald-500"
-                              initial={{ width: 0 }}
-                              animate={{ width: `${agent.metrics.memory}%` }}
-                            />
-                          </div>
-                          <span className="text-[10px] text-neutral-300 font-mono">{agent.metrics.memory.toFixed(1)}%</span>
+                      <div className="flex justify-between items-center text-[9px] font-mono">
+                        <div className="flex items-center gap-1 text-neutral-500">
+                          <Database className="w-2.5 h-2.5" />
+                          <span>MEM: {agent.metrics.memory.toFixed(1)}%</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-neutral-500">
+                          <History className="w-2.5 h-2.5" />
+                          <span>LAT: {agent.metrics.latency}ms</span>
                         </div>
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-neutral-500">Latency</span>
-                        <span className="text-[10px] text-neutral-300 font-mono">{agent.metrics.latency.toFixed(0)}ms</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-neutral-500">Error Rate</span>
-                        <span className={`text-[10px] font-mono ${agent.metrics.errorRate > 0.05 ? 'text-red-400' : 'text-neutral-300'}`}>
-                          {(agent.metrics.errorRate * 100).toFixed(2)}%
-                        </span>
-                      </div>
+                    </div>
+                  )}
+
+                  {agent.status === 'idle' && (
+                    <div className="mt-auto pt-2 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[9px] text-neutral-600 uppercase tracking-widest font-mono">Waiting for deployment...</span>
                     </div>
                   )}
 
@@ -1405,7 +1506,7 @@ ${finalPrompt}`;
                       {agent.error}
                     </div>
                   )}
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -1677,77 +1778,103 @@ ${finalPrompt}`;
           </div>
 
           {/* Pipeline Steps */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
-            <h2 className="text-xl font-semibold mb-6">مسار الجلسة</h2>
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl -mr-16 -mt-16" />
+            <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-indigo-400" />
+              مسار الجلسة (Pipeline)
+            </h2>
             <div className="space-y-6 relative">
-              <div className="absolute right-6 top-8 bottom-8 w-0.5 bg-neutral-800" />
+              <div className="absolute right-6 top-8 bottom-8 w-0.5 bg-neutral-800/50" />
               
               {steps.map((step) => (
-                <div key={step.id} className="relative flex items-start gap-4">
-                  <div className={`relative z-10 flex items-center justify-center w-12 h-12 rounded-full border-2 bg-neutral-900 transition-colors duration-300
-                    ${step.status === 'completed' ? 'border-green-500 text-green-500' : 
-                      step.status === 'error' ? 'border-red-500 text-red-500' :
-                      step.status === 'running' ? 'border-indigo-500 text-indigo-500' : 
-                      'border-neutral-700 text-neutral-600'}`}
+                <motion.div 
+                  layout
+                  key={step.id} 
+                  className="relative flex items-start gap-4 group"
+                >
+                  <div className={`relative z-10 flex items-center justify-center w-12 h-12 rounded-2xl border transition-all duration-500
+                    ${step.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 
+                      step.status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]' :
+                      step.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 
+                      'bg-neutral-950 border-neutral-800 text-neutral-600'}`}
                   >
-                    {step.status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> : 
-                     step.status === 'error' ? <AlertCircle className="w-6 h-6" /> :
-                     step.status === 'running' ? <Loader2 className="w-6 h-6 animate-spin" /> : 
+                    {step.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : 
+                     step.status === 'error' ? <AlertCircle className="w-5 h-5" /> :
+                     step.status === 'running' ? <Loader2 className="w-5 h-5 animate-spin" /> : 
                      step.icon}
                   </div>
-                  <div className="pt-2 flex-1">
-                    <h3 className={`font-medium text-lg ${step.status === 'idle' ? 'text-neutral-500' : step.status === 'error' ? 'text-red-400' : 'text-neutral-200'}`}>
-                      {step.title}
-                    </h3>
-                    <p className="text-sm text-neutral-500 mt-1">{step.description}</p>
+                  <div className="pt-1 flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className={`font-bold text-sm uppercase tracking-tight ${step.status === 'idle' ? 'text-neutral-600' : step.status === 'error' ? 'text-red-400' : 'text-neutral-200'}`}>
+                        {step.title}
+                      </h3>
+                      {step.status === 'running' && (
+                        <span className="text-[9px] font-mono text-indigo-400 animate-pulse uppercase">Active</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-neutral-500 mt-1 leading-relaxed">{step.description}</p>
                   </div>
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
 
           {/* Memory Bank */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 blur-3xl -mr-16 -mt-16" />
+            <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
               <BrainCircuit className="w-5 h-5 text-purple-400" />
               بنك الذاكرة (Memory Bank)
             </h2>
             
             {isMemoryLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-neutral-600" />
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-neutral-800" />
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
-                  <div className="flex items-center gap-2 text-sm text-neutral-400 mb-2">
-                    <History className="w-4 h-4" />
-                    الأنماط المتعلمة
+              <div className="space-y-5">
+                <div className="p-4 bg-neutral-950/50 rounded-xl border border-neutral-800/50 backdrop-blur-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                      <History className="w-3 h-3" />
+                      الأنماط المتعلمة (Learned Patterns)
+                    </div>
+                    <span className="text-[9px] font-mono text-neutral-600 bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-800">
+                      {memory?.patterns?.length || 0} Total
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {memory?.patterns?.length > 0 ? (
                       memory.patterns.map((p: string, i: number) => (
-                        <span key={i} className="px-2 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-md text-xs">
+                        <motion.span 
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          key={i} 
+                          className="px-2.5 py-1 bg-purple-500/5 text-purple-400/80 border border-purple-500/10 rounded-lg text-[10px] font-medium hover:bg-purple-500/10 transition-colors cursor-default"
+                        >
                           {p}
-                        </span>
+                        </motion.span>
                       ))
                     ) : (
-                      <span className="text-xs text-neutral-600 italic">لا توجد أنماط مسجلة بعد</span>
+                      <div className="w-full text-center py-2 text-[10px] text-neutral-600 italic">لا توجد أنماط مسجلة بعد</div>
                     )}
                   </div>
                 </div>
 
-                <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
-                  <div className="flex items-center gap-2 text-sm text-neutral-400 mb-2">
-                    <Database className="w-4 h-4" />
-                    حالة النظام البيئي
+                <div className="p-4 bg-neutral-950/50 rounded-xl border border-neutral-800/50 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-4">
+                    <Database className="w-3 h-3" />
+                    حالة النظام البيئي (Ecosystem Status)
                   </div>
-                  <div className="space-y-2">
-                    <div className="text-xs text-neutral-300">
-                      <span className="text-neutral-500">القرارات الرئيسية:</span> {ecosystem?.keyDecisions?.length || 0}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-neutral-600 uppercase font-bold">Key Decisions</span>
+                      <span className="text-xl font-mono text-neutral-200">{ecosystem?.keyDecisions?.length || 0}</span>
                     </div>
-                    <div className="text-xs text-neutral-300">
-                      <span className="text-neutral-500">الخدمات المنشورة:</span> {ecosystem?.deployedServices?.length || 0}
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-neutral-600 uppercase font-bold">Deployed Apps</span>
+                      <span className="text-xl font-mono text-neutral-200">{ecosystem?.deployedServices?.length || 0}</span>
                     </div>
                   </div>
                 </div>
