@@ -1,0 +1,5 @@
+{
+  "name": "Jules AI Microservices Pipeline",
+  "description": "Automated pipeline for generating full-stack microservices using Gemini and Jules AI MCP tools.",
+  "requestFramePermissions": []
+}

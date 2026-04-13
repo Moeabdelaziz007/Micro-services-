@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "Session": {
+      "title": "Jules Session",
+      "description": "Stores history and metadata of Jules AI sessions",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string", "description": "The unique ID of the Jules session" },
+        "prompt": { "type": "string", "description": "The prompt used to start the session" },
+        "status": { "type": "string", "enum": ["active", "completed", "error"], "description": "Current status of the session" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the session was created" },
+        "summary": { "type": "string", "description": "A summary of what was achieved in this session" },
+        "uid": { "type": "string", "description": "The user ID who owns this session" }
+      },
+      "required": ["sessionId", "prompt", "status", "createdAt", "uid"]
+    },
+    "EcosystemContext": {
+      "title": "Ecosystem Context",
+      "description": "Stores the high-level state of the microservices ecosystem",
+      "type": "object",
+      "properties": {
+        "keyDecisions": { "type": "array", "items": { "type": "string" }, "description": "List of important architectural decisions" },
+        "deployedServices": { "type": "array", "items": { "type": "object" }, "description": "List of services currently deployed" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "When the context was last updated" },
+        "uid": { "type": "string", "description": "The user ID who owns this context" }
+      },
+      "required": ["uid", "lastUpdated"]
+    },
+    "AgentMemory": {
+      "title": "Agent Memory",
+      "description": "Amrikyy's learned patterns and persistent memory",
+      "type": "object",
+      "properties": {
+        "patterns": { "type": "array", "items": { "type": "string" }, "description": "Learned patterns or preferences" },
+        "notes": { "type": "string", "description": "General notes for the agent" },
+        "uid": { "type": "string", "description": "The user ID who owns this memory" }
+      },
+      "required": ["uid"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Collection of Jules sessions"
+    },
+    "/ecosystem/{uid}": {
+      "schema": "EcosystemContext",
+      "description": "Singleton context for a user's ecosystem"
+    },
+    "/memory/{uid}": {
+      "schema": "AgentMemory",
+      "description": "Singleton memory for Amrikyy"
+    }
+  }
+}
