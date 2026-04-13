@@ -1,5 +1,5 @@
 {
-  "name": "Jules AI Microservices Pipeline",
-  "description": "Automated pipeline for generating full-stack microservices using Gemini and Jules AI MCP tools.",
-  "requestFramePermissions": []
+  "name": "Amrikyy Intelligent Maestro",
+  "description": "A high-performance AI command center for managing microservices, autonomous agents, and real-time data pipelines.",
+  "requestFramePermissions": ["microphone"]
 }

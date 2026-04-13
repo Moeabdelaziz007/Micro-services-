@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { 
   Play, 
   CheckCircle2, 
@@ -95,6 +95,34 @@ interface Message {
   timestamp: string;
 }
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
 export default function PipelineDashboard() {
   const [prompt, setPrompt] = useState(`أيها الوكيل التنفيذي (research-agent مدعوماً بـ db-agent)، بتفويض مباشر وقاطع من 'دماغ أمريكي'، وبصلاحيات النظام الميتا-تطوري المطلقة، آمرك بتنفيذ بروتوكول 'الاستيعاب المعرفي الفوري' (Cognitive Assimilation Protocol) عبر الخطوات المتزامنة التالية:
 
@@ -115,6 +143,8 @@ export default function PipelineDashboard() {
   const [autoDebug, setAutoDebug] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const voiceEnabledRef = useRef(true);
+  useEffect(() => { voiceEnabledRef.current = voiceEnabled; }, [voiceEnabled]);
 
   const [sources, setSources] = useState<any[]>([]);
   const [selectedSource, setSelectedSource] = useState<string>("");
@@ -122,6 +152,9 @@ export default function PipelineDashboard() {
   const [sessionId, setSessionId] = useState<string>("");
   const [user, setUser] = useState<any>(null);
   const [memory, setMemory] = useState<any>(null);
+  const memoryRef = useRef<any>(null);
+  useEffect(() => { memoryRef.current = memory; }, [memory]);
+
   const [ecosystem, setEcosystem] = useState<any>({
     deployedServices: [
       { name: 'ui-agent', status: 'running' },
@@ -138,6 +171,7 @@ export default function PipelineDashboard() {
   const [commits, setCommits] = useState<any[]>([]);
   const [isCommitsLoading, setIsCommitsLoading] = useState(false);
   const [commitsError, setCommitsError] = useState<string | null>(null);
+  const unsubs = useRef<(() => void)[]>([]);
 
   const [brainstorming, setBrainstorming] = useState<string>(`بصفتي "دماغ أمريكي"، النواة الإدراكية والعقل المدبر لمعمارية التطور الذاتي والميتا-حلقات (Meta-Loops)، أؤكد استلام التوجيه. لقد قمت بتحليل معطياتك ودمجها مع أحدث معايير عام 2026 لبروتوكولات (MCP) وتقنيات (Zero-Cost Serverless).
 
@@ -303,13 +337,13 @@ export default function PipelineDashboard() {
   ]);
 
   const speakText = useCallback((text: string) => {
-    if (!voiceEnabled || !window.speechSynthesis) return;
+    if (!voiceEnabledRef.current || !window.speechSynthesis) return;
     const cleanText = text.replace(/\[.*?\]/g, '').replace(/[a-zA-Z]/g, '').trim();
     if (!cleanText) return;
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'ar-SA';
     window.speechSynthesis.speak(utterance);
-  }, [voiceEnabled]);
+  }, []);
 
   const addLog = useCallback((
     message: string, 
@@ -321,8 +355,8 @@ export default function PipelineDashboard() {
     
     // Auto-enhance error logs with memory context
     let enhancedContext = { ...context };
-    if (isError && !enhancedContext.memorySnippet && memory?.patterns?.length > 0) {
-      enhancedContext.memorySnippet = `Pattern: ${memory.patterns[0]}`;
+    if (isError && !enhancedContext.memorySnippet && memoryRef.current?.patterns?.length > 0) {
+      enhancedContext.memorySnippet = `Pattern: ${memoryRef.current.patterns[0]}`;
     }
 
     setLogs(prev => [...prev.slice(-99), { timestamp, message, isError, tool, ...enhancedContext }]);
@@ -336,7 +370,31 @@ export default function PipelineDashboard() {
       }]);
       speakText("تم رصد خطأ، جاري التحليل");
     }
-  }, [speakText, memory]);
+  }, [speakText]);
+
+  const handleFirestoreError = useCallback((error: unknown, operationType: OperationType, path: string | null) => {
+    const errInfo: FirestoreErrorInfo = {
+      error: error instanceof Error ? error.message : String(error),
+      authInfo: {
+        userId: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified,
+        isAnonymous: auth.currentUser?.isAnonymous,
+        tenantId: auth.currentUser?.tenantId,
+        providerInfo: auth.currentUser?.providerData.map(provider => ({
+          providerId: provider.providerId,
+          displayName: provider.displayName,
+          email: provider.email,
+          photoUrl: provider.photoURL
+        })) || []
+      },
+      operationType,
+      path
+    };
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+    addLog(`خطأ في قاعدة البيانات (${operationType}): ${errInfo.error}`, true, 'firestore', { functionName: 'handleFirestoreError' });
+    throw new Error(JSON.stringify(errInfo));
+  }, [addLog]);
 
   const [messageQueue, setMessageQueue] = useState<Message[]>([]);
   const [subscriptions, setSubscriptions] = useState<Record<string, string[]>>({});
@@ -450,7 +508,13 @@ export default function PipelineDashboard() {
 
   // Fetch sources and handle Auth/Memory on mount
   useEffect(() => {
+    const cleanupListeners = () => {
+      unsubs.current.forEach(unsub => unsub());
+      unsubs.current = [];
+    };
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
+      cleanupListeners();
       if (u) {
         setUser(u);
         // Fetch Memory and Ecosystem Context
@@ -461,16 +525,13 @@ export default function PipelineDashboard() {
         const unsubMemory = onSnapshot(memoryRef, (doc) => {
           if (doc.exists()) setMemory(doc.data());
           setIsMemoryLoading(false);
-        });
+        }, (err) => handleFirestoreError(err, OperationType.GET, `memory/${u.uid}`));
 
         const unsubEcosystem = onSnapshot(ecosystemRef, (doc) => {
           if (doc.exists()) setEcosystem(doc.data());
-        });
+        }, (err) => handleFirestoreError(err, OperationType.GET, `ecosystem/${u.uid}`));
 
-        return () => {
-          unsubMemory();
-          unsubEcosystem();
-        };
+        unsubs.current.push(unsubMemory, unsubEcosystem);
       } else {
         // Sign in anonymously for demo purposes if not logged in
         signInAnonymously(auth).catch(err => {
@@ -568,10 +629,11 @@ export default function PipelineDashboard() {
 
     return () => {
       unsubscribeAuth();
+      cleanupListeners();
       clearInterval(githubInterval);
       if (pollInterval.current) clearInterval(pollInterval.current);
     };
-  }, [addLog, selectedSource]);
+  }, [addLog, selectedSource, handleFirestoreError]);
 
   const updateStepStatus = (stepId: string, status: Status) => {
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
@@ -981,31 +1043,54 @@ ${finalPrompt}`;
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-8" dir="rtl">
-      <header className="flex items-center justify-between border-b border-neutral-800 pb-6">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
-            <Bot className="w-8 h-8 text-blue-500" />
-            أمريكي (Amrikyy) - AI Orchestrator
-          </h1>
-          <p className="text-neutral-400 mt-2">
-            المايسترو الذكي لبناء وتصحيح الخدمات المصغرة باستخدام Jules API وأدوات MCP
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => setVoiceEnabled(!voiceEnabled)}
-            className={`p-2 rounded-full border transition-colors ${voiceEnabled ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-neutral-900 border-neutral-800 text-neutral-500'}`}
-            title="تفعيل/تعطيل الصوت"
+    <div className="min-h-screen bg-black text-neutral-100 font-sans selection:bg-indigo-500/30 selection:text-indigo-200 relative overflow-hidden" dir="rtl">
+      {/* Technical Grid Overlay */}
+      <div className="absolute inset-0 z-0 opacity-20 pointer-events-none" 
+           style={{ backgroundImage: 'radial-gradient(#333 1px, transparent 1px)', backgroundSize: '32px 32px' }}></div>
+      <div className="absolute inset-0 z-0 opacity-10 pointer-events-none"
+           style={{ backgroundImage: 'linear-gradient(#222 1px, transparent 1px), linear-gradient(90deg, #222 1px, transparent 1px)', backgroundSize: '128px 128px' }}></div>
+      
+      <div className="relative z-10 max-w-[1600px] mx-auto p-4 lg:p-8 space-y-8">
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-neutral-800/50">
+          <motion.div 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-4"
           >
-            <Volume2 className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2 text-sm text-neutral-400 bg-neutral-900 px-4 py-2 rounded-full border border-neutral-800">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Jules API متصل
+            <div className="relative">
+              <div className="absolute -inset-1 bg-indigo-500 rounded-full blur opacity-25 animate-pulse"></div>
+              <div className="relative bg-neutral-900 p-3 rounded-full border border-neutral-700">
+                <BrainCircuit className="w-8 h-8 text-indigo-400" />
+              </div>
+            </div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tighter bg-gradient-to-r from-white via-neutral-200 to-neutral-500 bg-clip-text text-transparent uppercase">
+                Amrikyy Maestro
+              </h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <p className="text-xs font-mono text-neutral-500 uppercase tracking-widest">System Online // Meta-Loop v3.1</p>
+              </div>
+            </div>
+          </motion.div>
+          
+          <div className="flex items-center gap-4">
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              className={`p-3 rounded-xl border transition-all duration-300 ${voiceEnabled ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-neutral-900 border-neutral-800 text-neutral-500'}`}
+              title="تفعيل/تعطيل الصوت"
+            >
+              {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+            </motion.button>
+            <div className="flex items-center gap-3 text-sm text-neutral-400 bg-neutral-900/50 backdrop-blur-md px-5 py-2.5 rounded-xl border border-neutral-800 shadow-xl">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              <span className="font-mono tracking-tight uppercase text-[11px]">Jules API: Connected</span>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
@@ -1161,31 +1246,45 @@ ${finalPrompt}`;
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {subAgents.map((agent) => (
-                <div key={agent.id} className={`p-4 rounded-xl border flex flex-col gap-3 transition-all duration-300 relative group
-                  ${agent.status === 'completed' ? 'bg-green-500/10 border-green-500/30' : 
-                    agent.status === 'error' ? 'bg-red-500/10 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 
-                    agent.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 
-                    'bg-neutral-950 border-neutral-800'}`}
+                <div key={agent.id} className={`p-4 rounded-2xl border flex flex-col gap-3 transition-all duration-500 relative group overflow-hidden
+                  ${agent.status === 'completed' ? 'bg-green-500/5 border-green-500/20' : 
+                    agent.status === 'error' ? 'bg-red-500/5 border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]' : 
+                    agent.status === 'running' ? 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.1)]' : 
+                    'bg-neutral-900/40 border-neutral-800 hover:border-neutral-700'}`}
                 >
-                  <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
+                  {/* Card Grid Pattern */}
+                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+                       style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+                  
+                  <div className="relative flex items-center justify-between border-b border-neutral-800/50 pb-3">
                     <div className="flex flex-col">
-                      <span className="font-bold text-sm text-neutral-200">{agent.name}</span>
-                      {performanceInsights.insights[agent.id] && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <Star className="w-2.5 h-2.5 text-yellow-500 fill-yellow-500" />
-                          <span className="text-[10px] text-neutral-500 font-mono">
-                            {performanceInsights.insights[agent.id].averageRating.toFixed(1)} ({performanceInsights.insights[agent.id].count})
-                          </span>
-                        </div>
-                      )}
+                      <span className="font-bold text-sm text-neutral-200 group-hover:text-white transition-colors">{agent.name}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[9px] font-mono text-neutral-500 uppercase tracking-tighter">{agent.id}</span>
+                        {performanceInsights.insights[agent.id] && (
+                          <div className="flex items-center gap-1">
+                            <Star className="w-2.5 h-2.5 text-yellow-500 fill-yellow-500" />
+                            <span className="text-[9px] text-neutral-500 font-mono">
+                              {performanceInsights.insights[agent.id].averageRating.toFixed(1)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {agent.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
-                    {agent.status === 'running' && <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />}
-                    {agent.status === 'error' && <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />}
-                    {agent.status === 'idle' && <div className="w-2 h-2 rounded-full bg-neutral-700" />}
+                    <div className={`p-2 rounded-xl border transition-colors ${
+                      agent.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 animate-pulse' : 
+                      agent.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                      agent.status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                      'bg-neutral-800 border-neutral-700 text-neutral-500'
+                    }`}>
+                      {agent.status === 'completed' && <CheckCircle2 className="w-4 h-4" />}
+                      {agent.status === 'running' && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {agent.status === 'error' && <AlertCircle className="w-4 h-4 animate-pulse" />}
+                      {agent.status === 'idle' && <Bot className="w-4 h-4 opacity-50" />}
+                    </div>
                   </div>
                   
-                  <p className="text-xs text-neutral-400">{agent.description}</p>
+                  <p className="relative text-[11px] text-neutral-400 leading-relaxed line-clamp-2">{agent.description}</p>
                   
                   {agent.metrics && agent.status !== 'idle' && (
                     <div className="grid grid-cols-2 gap-2 py-2 border-y border-neutral-800/30 my-1">
@@ -1740,5 +1839,6 @@ ${finalPrompt}`;
           </div>
         </div>
       </div>
-    );
+    </div>
+  );
 }
