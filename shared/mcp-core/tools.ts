@@ -63,3 +63,10 @@ export const CloudflareMCP: MCPTool = {
   name: 'Cloudflare Workers',
   description: 'Deploy MCP servers and microservices at the edge.'
 };
+
+// Web Automation Tools
+export const PuppeteerMCP: MCPTool = {
+  id: 'puppeteer-mcp',
+  name: 'Puppeteer/Playwright',
+  description: 'Headless browser automation for complex web interaction, login, and scraping.'
+};

@@ -7,6 +7,7 @@ interface Node extends d3.SimulationNodeDatum {
   id: string;
   group: number;
   label: string;
+  status?: 'running' | 'stopped' | 'error' | 'unknown';
 }
 
 interface Link extends d3.SimulationLinkDatum<Node> {
@@ -45,7 +46,8 @@ export default function EcosystemGraph({ services }: EcosystemGraphProps) {
     
     safeServices.forEach((service, index) => {
       const serviceId = typeof service === 'string' ? service : (service.name || `service-${index}`);
-      nodes.push({ id: serviceId, group: 3, label: serviceId });
+      const status = typeof service === 'object' && service.status ? service.status : 'running';
+      nodes.push({ id: serviceId, group: 3, label: serviceId, status });
       links.push({ source: 'brain', target: serviceId });
       links.push({ source: 'repo', target: serviceId });
     });
@@ -88,7 +90,11 @@ export default function EcosystemGraph({ services }: EcosystemGraphProps) {
         if (d.group === 1) return "#a855f7"; // Purple for Brain
         if (d.group === 2) return "#3b82f6"; // Blue for Repo
         if (d.group === 4) return "#6b7280"; // Gray for placeholder
-        return "#10b981"; // Green for Services
+        
+        // Group 3: Services
+        if (d.status === 'error') return "#ef4444"; // Red
+        if (d.status === 'stopped') return "#6b7280"; // Gray
+        return "#10b981"; // Green (running)
       })
       .call(drag(simulation) as any);
 
@@ -155,7 +161,9 @@ export default function EcosystemGraph({ services }: EcosystemGraphProps) {
       <div className="absolute top-2 right-2 flex flex-col gap-1 bg-neutral-900/80 p-2 rounded-lg border border-neutral-800 text-[10px] text-neutral-400">
         <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-500"></div> دماغ أمريكي</div>
         <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500"></div> المستودع</div>
-        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> خدمات مصغرة</div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> خدمة تعمل</div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500"></div> خطأ في الخدمة</div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-gray-500"></div> خدمة متوقفة</div>
       </div>
     </div>
   );

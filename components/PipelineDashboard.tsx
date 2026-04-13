@@ -24,7 +24,8 @@ import {
   Volume2,
   Stethoscope,
   Database,
-  History
+  History,
+  Users
 } from "lucide-react";
 import { motion } from "motion/react";
 import { db, auth } from "@/lib/firebase";
@@ -62,25 +63,30 @@ interface McpTool {
   error?: string;
 }
 
-export default function PipelineDashboard() {
-  const [prompt, setPrompt] = useState(`أيها الوكيل التنفيذي، بصفتي 'دماغ أمريكي'، آمرك ببدء تهيئة الهيكل الأساسي (Scaffolding) لمستودع Gemini-Micro-Services-and-Apss-and-Agents-Ecosystem داخل مسار sources/github/Moeabdelaziz007/Micro-services-. نفذ المهام المعمارية التالية بدقة صارمة لدعم بنية Zero-Cost و TurboQuant:
+interface SubAgent {
+  id: string;
+  name: string;
+  description: string;
+  tools: string[];
+  keywords: string[];
+  status: Status;
+  error?: string;
+}
 
-بنية المونو-ريبو (Monorepo): أنشئ الهيكلية التالية للمجلدات:
-/agents/ui-agent (لواجهة المستخدم)
-/agents/db-agent (لإدارة Neon و Firebase)
-/agents/devops-agent (وكيل المراقبة والتشغيل الذاتي)
-/agents/research-agent (وكيل البحث وجمع البيانات)
-/shared/config (للإعدادات المشتركة)
-/shared/mcp-core (لبروتوكولات الاتصال بين الوكلاء)
-قوالب الاتصال (Boilerplates): داخل /shared/config، قم بإنشاء ملفات تكوين مبدئية وآمنة للاتصال بكل من Firebase (NoSQL/Auth) و Neon (Serverless Postgres)، مع قراءة القيم من ملفات .env.
-تهيئة الاعتماديات: قم بإنشاء package.json أو requirements.txt داخل مجلد كل وكيل. تأكد من تضمين مكتبات @google/genai (أو ما يعادلها لـ Gemini)، وحزم mcp-sdk، وإطارات عمل خفيفة وسريعة (مثل Express/FastAPI).
-المحاكاة المحلية: أنشئ ملف docker-compose.yml في الجذر الأساسي لربط كافة الوكلاء معاً ضمن شبكة داخلية محاكية لبيئة شبكات Render الدقيقة.
-بصمة TurboQuant: أضف تعليقات توجيهية (Inline Comments) واضحة في كود devops-agent تحدد أين سيتم بناء نظام "مضاد السبات" (Anti-Cold-Start Ping System) لاحقاً.
-التزم بكتابة كود نظيف، قابل للتوسع، ومستعد للاندماج الفوري مع آليات الذكاء الاصطناعي.`);
+export default function PipelineDashboard() {
+  const [prompt, setPrompt] = useState(`أيها الوكيل التنفيذي، بتفويض مباشر من 'دماغ أمريكي' وبصلاحيات النظام الميتا-تطوري الكاملة، آمرك بتنفيذ بروتوكول 'الاستيعاب المعرفي' الفوري:
+
+قم بتهيئة والاتصال بأداة Puppeteer / Playwright MCP لفتح متصفح مخفي (Headless Browser).
+توجه إلى الصفحة الرئيسية لموقع Hacker News (أو أي منصة تقنية رائدة تراها مناسبة للاتجاهات الحديثة).
+قم بسحب عناوين، روابط، وملخصات أحدث 5 مقالات متصدرة.
+قم بتمرير هذه البيانات إلى واجهة Gemini API للقيام بتحليل معمق: استخرج أهم التقنيات، أطر العمل (Frameworks)، والمنهجيات المذكورة، وقم بصياغتها في هيكل JSON منظم.
+اتصل فوراً بـ Firestore MCP، وقم بحقن هذا الهيكل في قاعدة البيانات الخاصة بنا كـ مستند جديد تحت تصنيف 'مهارة بحثية' (Research Skill) داخل مجموعة 'الذاكرة العضلية' (Muscle Memory).
+قم بإرجاع تقرير تنفيذي موجز يؤكد نجاح العملية ويعرض لمحة عن التقنيات التي تم استيعابها في ذاكرة المنظومة. نفّذ فوراً وبدقة متناهية للحفاظ على استمرارية المعمارية الصفرية.`);
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoDebug, setAutoDebug] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [logFilter, setLogFilter] = useState<'all' | 'error' | 'mcp' | 'system'>('all');
   const [logs, setLogs] = useState<string[]>([
     "أهلاً بك! أنا أمريكي (Amrikyy)، المايسترو والوكيل الذكي الخاص بك. النظام جاهز.",
     "🤖 [أمريكي - Monitor] جاري مراقبة النظام وأدوات MCP...",
@@ -92,7 +98,18 @@ export default function PipelineDashboard() {
   const [sessionId, setSessionId] = useState<string>("");
   const [user, setUser] = useState<any>(null);
   const [memory, setMemory] = useState<any>(null);
-  const [ecosystem, setEcosystem] = useState<any>(null);
+  const [ecosystem, setEcosystem] = useState<any>({
+    deployedServices: [
+      { name: 'ui-agent', status: 'running' },
+      { name: 'db-agent', status: 'running' },
+      { name: 'devops-agent', status: 'running' },
+      { name: 'research-agent', status: 'running' },
+      { name: 'meta-agent', status: 'running' },
+      { name: 'pulse-monitor', status: 'stopped' },
+      { name: 'tool-forge', status: 'stopped' },
+      { name: 'zero-cost-enforcer', status: 'stopped' }
+    ]
+  });
   const [isMemoryLoading, setIsMemoryLoading] = useState(true);
   const [commits, setCommits] = useState<any[]>([]);
   const [isCommitsLoading, setIsCommitsLoading] = useState(false);
@@ -110,15 +127,63 @@ export default function PipelineDashboard() {
     { id: "debug", title: "التحقق والاعتماد", description: "مراجعة التغييرات وإنهاء الجلسة", icon: <Bug className="w-5 h-5" />, status: "idle" },
   ]);
 
-  const [mcpTools, setMcpTools] = useState<McpTool[]>([
-    { id: "firebase", name: "Firebase / GCP", description: "قواعد البيانات، المصادقة، والاستضافة (Free Tier)", status: "idle" },
-    { id: "github", name: "GitHub", description: "إدارة المستودعات وتتبع المشاكل (Free)", status: "idle" },
-    { id: "brave", name: "Brave Search", description: "البحث في الويب (Free API Tier)", status: "idle" },
-    { id: "v0", name: "v0", description: "توليد واجهات المستخدم (Free Tier)", status: "idle" },
-    { id: "neon", name: "Neon", description: "قواعد بيانات Postgres (Free Tier)", status: "idle" },
-    { id: "render", name: "Render", description: "نشر الخدمات (Free Tier)", status: "idle" },
-    { id: "context7", name: "Context7", description: "إدارة السياق والذاكرة (Zero-Cost)", status: "idle" },
-    { id: "turboquant", name: "TurboQuant", description: "ضغط النماذج (Zero-Cost)", status: "idle" },
+  const [subAgents, setSubAgents] = useState<SubAgent[]>([
+    { 
+      id: "frontend-agent", 
+      name: "UI & Frontend Agent", 
+      description: "تصميم واجهات، اختبار E2E، واستضافة", 
+      tools: ["v0", "Puppeteer", "Firebase"],
+      keywords: ["v0", "puppeteer", "playwright", "headless", "firebase", "ui", "frontend"],
+      status: "idle" 
+    },
+    { 
+      id: "data-agent", 
+      name: "Data & Memory Agent", 
+      description: "إدارة قواعد البيانات والذاكرة العضلية", 
+      tools: ["Neon Postgres", "Firestore", "Context7"],
+      keywords: ["neon", "postgres", "firestore", "context7", "memory", "database"],
+      status: "idle" 
+    },
+    { 
+      id: "devops-agent", 
+      name: "DevOps & Infra Agent", 
+      description: "إدارة الكود والنشر التلقائي", 
+      tools: ["GitHub", "Render", "Cloudflare"],
+      keywords: ["github", "git", "render", "cloudflare", "deploy", "devops"],
+      status: "idle" 
+    },
+    { 
+      id: "research-agent", 
+      name: "Research & AI Agent", 
+      description: "بحث وتحليل فائق السرعة", 
+      tools: ["Brave Search", "Groq Cloud", "TurboQuant"],
+      keywords: ["brave", "search", "groq", "turboquant", "research", "ai"],
+      status: "idle" 
+    },
+    { 
+      id: "pulse-monitor", 
+      name: "Pulse-Monitor Agent", 
+      description: "مراقبة GitHub Trending وتحليل التقنيات الصاعدة", 
+      tools: ["GitHub", "Gemini", "Cron"],
+      keywords: ["github", "trending", "pulse", "monitor"],
+      status: "idle" 
+    },
+    { 
+      id: "tool-forge", 
+      name: "Dynamic-Tool Forge", 
+      description: "توليد أدوات MCP برمجياً وحقنها في الذاكرة", 
+      tools: ["Gemini", "Firestore", "Context7"],
+      keywords: ["forge", "dynamic", "tool", "generate"],
+      status: "idle" 
+    },
+    { 
+      id: "zero-cost-enforcer", 
+      name: "Zero-Cost Enforcer", 
+      description: "مراقبة الاستهلاك وضمان تكلفة صفرية", 
+      tools: ["GCP Operations", "Render", "Firebase"],
+      keywords: ["zero-cost", "enforcer", "gcp", "billing"],
+      status: "idle" 
+    }
   ]);
 
   const speakText = useCallback((text: string) => {
@@ -321,9 +386,15 @@ export default function PipelineDashboard() {
         completedAt: new Date().toISOString()
       }, { merge: true });
 
+      // Generate meaningful patterns and decisions based on the session
+      const usedAgents = subAgents.filter(a => a.status === 'completed').map(a => a.name);
+      const agentsString = usedAgents.length > 0 ? usedAgents.join(' و ') : 'الوكلاء الأساسيين';
+      
+      const newPattern = `تم تنفيذ مهمة معقدة بتعاون ${agentsString}: ${prompt.slice(0, 40)}...`;
+      const newDecision = `تم تفعيل ${agentsString} لحل مشكلة مركبة في ${new Date().toLocaleTimeString('ar-EG')}`;
+
       // Update Memory (Patterns)
       const currentPatterns = memory?.patterns || [];
-      const newPattern = prompt.slice(0, 50) + "...";
       if (!currentPatterns.includes(newPattern)) {
         const updatedPatterns = [newPattern, ...currentPatterns].slice(0, 5);
         await setDoc(doc(db, "memory", user.uid), {
@@ -335,7 +406,7 @@ export default function PipelineDashboard() {
       // Update Ecosystem (Decisions/Services count)
       const currentDecisions = ecosystem?.keyDecisions || [];
       await setDoc(doc(db, "ecosystem", user.uid), {
-        keyDecisions: [...currentDecisions, `Session ${sid.split('/').pop()} completed`],
+        keyDecisions: [newDecision, ...currentDecisions].slice(0, 5),
         lastUpdated: new Date().toISOString(),
         uid: user.uid
       }, { merge: true });
@@ -367,30 +438,19 @@ export default function PipelineDashboard() {
               if (!text) return;
               const lowerText = text.toLowerCase();
               
-              const toolMap = [
-                { id: "firebase", name: "Firebase / GCP", keywords: ["firebase", "gcp", "google cloud"] },
-                { id: "github", name: "GitHub", keywords: ["github"] },
-                { id: "brave", name: "Brave Search", keywords: ["brave search", "brave"] },
-                { id: "v0", name: "v0", keywords: ["v0"] },
-                { id: "neon", name: "Neon", keywords: ["neon", "postgres"] },
-                { id: "render", name: "Render / Cloud Run", keywords: ["render", "cloud run"] },
-                { id: "context7", name: "Context7", keywords: ["context7", "memory"] },
-                { id: "turboquant", name: "TurboQuant", keywords: ["turboquant", "compression"] }
-              ];
+              const matchedAgents = subAgents.filter(agent => agent.keywords.some(kw => lowerText.includes(kw)));
               
-              const matchedTools = toolMap.filter(t => t.keywords.some(kw => lowerText.includes(kw)));
-              
-              if (matchedTools.length > 0) {
-                matchedTools.forEach(t => {
-                  addLog(`[MCP: ${t.name}] ${actionDesc}`, isError);
+              if (matchedAgents.length > 0) {
+                matchedAgents.forEach(agent => {
+                  addLog(`[Sub-Agent: ${agent.name}] ${actionDesc}`, isError);
                 });
                 
-                setMcpTools(prev => prev.map(tool => {
-                  if (matchedTools.some(mt => mt.id === tool.id)) {
+                setSubAgents(prev => prev.map(agent => {
+                  if (matchedAgents.some(ma => ma.id === agent.id)) {
                     const errorMsg = isError ? `${actionDesc}\nالتفاصيل:\n${detailedError || 'غير متوفر'}` : undefined;
-                    return { ...tool, status: isError ? 'error' : intendedStatus, error: errorMsg };
+                    return { ...agent, status: isError ? 'error' : intendedStatus, error: errorMsg };
                   }
-                  return tool;
+                  return agent;
                 }));
               }
             };
@@ -441,8 +501,8 @@ export default function PipelineDashboard() {
               addLog(`[أمريكي] ✅ اكتملت الجلسة بنجاح! تم رفع التعديلات.`);
               speakText("اكتملت الجلسة بنجاح، عمل رائع");
               
-              // Mark all running tools as completed
-              setMcpTools(prev => prev.map(tool => tool.status === 'running' ? { ...tool, status: 'completed' } : tool));
+              // Mark all running agents as completed
+              setSubAgents(prev => prev.map(agent => agent.status === 'running' ? { ...agent, status: 'completed' } : agent));
               
               // Update Memory
               updateMemoryAfterSession(sid);
@@ -761,32 +821,47 @@ ${finalPrompt}`;
             </div>
           </div>
 
-          {/* MCP Tools Status */}
+          {/* Sub-Agents Status */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <LinkIcon className="w-5 h-5 text-blue-400" />
-              أدوات MCP المستهدفة
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {mcpTools.map((tool) => (
-                <div key={tool.id} className={`p-4 rounded-xl border flex flex-col gap-2 transition-all duration-300 relative group
-                  ${tool.status === 'completed' ? 'bg-green-500/10 border-green-500/30' : 
-                    tool.status === 'error' ? 'bg-red-500/10 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 
-                    tool.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-400" />
+                الوكلاء الفرعيين (Sub-Agents & Mini Apps)
+              </h2>
+              <span className="text-xs text-neutral-500 bg-neutral-950 px-2 py-1 rounded-md border border-neutral-800">
+                دمج ذكي للأدوات (MCPs + APIs)
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {subAgents.map((agent) => (
+                <div key={agent.id} className={`p-4 rounded-xl border flex flex-col gap-3 transition-all duration-300 relative group
+                  ${agent.status === 'completed' ? 'bg-green-500/10 border-green-500/30' : 
+                    agent.status === 'error' ? 'bg-red-500/10 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 
+                    agent.status === 'running' ? 'bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 
                     'bg-neutral-950 border-neutral-800'}`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-sm text-neutral-200">{tool.name}</span>
-                    {tool.status === 'completed' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                    {tool.status === 'running' && <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />}
-                    {tool.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500 animate-pulse" />}
-                    {tool.status === 'idle' && <div className="w-2 h-2 rounded-full bg-neutral-700" />}
+                  <div className="flex items-center justify-between border-b border-neutral-800/50 pb-2">
+                    <span className="font-bold text-sm text-neutral-200">{agent.name}</span>
+                    {agent.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                    {agent.status === 'running' && <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />}
+                    {agent.status === 'error' && <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />}
+                    {agent.status === 'idle' && <div className="w-2 h-2 rounded-full bg-neutral-700" />}
                   </div>
-                  <p className="text-xs text-neutral-500 mt-1">{tool.description}</p>
-                  {tool.status === 'error' && tool.error && (
+                  
+                  <p className="text-xs text-neutral-400">{agent.description}</p>
+                  
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {agent.tools.map((tool, idx) => (
+                      <span key={idx} className="text-[10px] bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full border border-neutral-700">
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+
+                  {agent.status === 'error' && agent.error && (
                     <div className="mt-2 p-2 bg-red-950/30 border border-red-500/30 rounded text-xs text-red-300 break-words whitespace-pre-wrap max-h-32 overflow-y-auto font-mono">
                       <span className="font-bold block mb-1">تفاصيل الخطأ:</span>
-                      {tool.error}
+                      {agent.error}
                     </div>
                   )}
                 </div>
@@ -794,19 +869,45 @@ ${finalPrompt}`;
             </div>
           </div>
 
-          {/* Terminal Logs */}
+          {/* Debug Console */}
           <div className="bg-[#0D0D0D] border border-neutral-800 rounded-2xl p-4 shadow-xl font-mono text-sm h-80 flex flex-col">
-            <div className="flex items-center gap-2 text-neutral-500 mb-4 border-b border-neutral-800 pb-2">
-              <Terminal className="w-4 h-4" />
-              <span>سجل نشاط أمريكي (Live Activities)</span>
+            <div className="flex items-center justify-between text-neutral-500 mb-4 border-b border-neutral-800 pb-2">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4" />
+                <span>وحدة تصحيح الأخطاء (Debug Console)</span>
+              </div>
+              <div className="flex gap-2 text-xs bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+                <button 
+                  onClick={() => setLogFilter('all')} 
+                  className={`px-2 py-1 rounded transition-colors ${logFilter === 'all' ? 'bg-neutral-800 text-white' : 'hover:text-neutral-300'}`}
+                >الكل</button>
+                <button 
+                  onClick={() => setLogFilter('error')} 
+                  className={`px-2 py-1 rounded transition-colors ${logFilter === 'error' ? 'bg-red-500/20 text-red-400' : 'hover:text-red-400/70'}`}
+                >الأخطاء</button>
+                <button 
+                  onClick={() => setLogFilter('mcp')} 
+                  className={`px-2 py-1 rounded transition-colors ${logFilter === 'mcp' ? 'bg-blue-500/20 text-blue-400' : 'hover:text-blue-400/70'}`}
+                >MCP</button>
+                <button 
+                  onClick={() => setLogFilter('system')} 
+                  className={`px-2 py-1 rounded transition-colors ${logFilter === 'system' ? 'bg-purple-500/20 text-purple-400' : 'hover:text-purple-400/70'}`}
+                >النظام</button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto space-y-2 text-neutral-300">
-              {logs.map((log, index) => (
+              {logs.filter(log => {
+                if (logFilter === 'all') return true;
+                if (logFilter === 'error') return log.includes('خطأ');
+                if (logFilter === 'mcp') return log.includes('[Sub-Agent:');
+                if (logFilter === 'system') return log.includes('[أمريكي') && !log.includes('خطأ');
+                return true;
+              }).map((log, index) => (
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   key={index}
-                  className={`${log.includes('خطأ') ? 'text-red-400' : log.includes('بنجاح') ? 'text-green-400' : log.includes('[Auto-Debug]') ? 'text-yellow-400' : log.includes('[أمريكي - Brain]') ? 'text-purple-400' : ''}`}
+                  className={`${log.includes('خطأ') ? 'text-red-400' : log.includes('بنجاح') ? 'text-green-400' : log.includes('[Auto-Debug]') ? 'text-yellow-400' : log.includes('[أمريكي - Brain]') ? 'text-purple-400' : log.includes('[Sub-Agent:') ? 'text-blue-300' : ''}`}
                 >
                   {log}
                 </motion.div>
@@ -910,6 +1011,52 @@ ${finalPrompt}`;
               </div>
             )}
           </div>
+          {/* Memory Bank UI */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <Database className="w-5 h-5 text-blue-400" />
+              الذاكرة العضلية (Memory Bank)
+            </h2>
+            
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-medium text-neutral-400 mb-3 flex items-center gap-2">
+                  <History className="w-4 h-4" />
+                  الأنماط والمهارات المكتسبة
+                </h3>
+                <div className="space-y-2">
+                  {memory?.patterns && memory.patterns.length > 0 ? (
+                    memory.patterns.map((pattern: string, idx: number) => (
+                      <div key={idx} className="bg-neutral-950 p-3 rounded-lg border border-neutral-800 text-sm text-neutral-300">
+                        {pattern}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-neutral-600 italic">لا توجد أنماط مسجلة بعد. سيتم التحديث بعد الجلسة.</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-medium text-neutral-400 mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  القرارات المعمارية الرئيسية
+                </h3>
+                <div className="space-y-2">
+                  {ecosystem?.keyDecisions && ecosystem.keyDecisions.length > 0 ? (
+                    ecosystem.keyDecisions.map((decision: string, idx: number) => (
+                      <div key={idx} className="bg-neutral-950 p-3 rounded-lg border border-emerald-500/20 text-sm text-emerald-400/90">
+                        {decision}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-neutral-600 italic">لا توجد قرارات مسجلة بعد.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Pipeline Steps */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-xl font-semibold mb-6">مسار الجلسة</h2>
