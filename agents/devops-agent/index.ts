@@ -2,12 +2,21 @@
 // TurboQuant Anti-Cold-Start System Stub
 
 import express from 'express';
+import { GitHubMCP, WebSearchMCP } from '../../shared/mcp-core/tools';
+import { validateConfig } from '../../shared/config/validator';
 
 const app = express();
 
+// Validate keys
+const { valid, missingKeys } = validateConfig(['GITHUB_TOKEN', 'SEARCH_API_KEY']);
+
+if (!valid) {
+    console.error(`DevOps Agent startup warning: Missing keys ${missingKeys.join(', ')}`);
+}
+
+console.log(`DevOps Agent initializing with tools: ${GitHubMCP.name}, ${WebSearchMCP.name}`);
+
 // TODO: Build Anti-Cold-Start Ping System here.
-// This system will send periodic HTTP requests to other agents
-// to keep them in a "warm" state, preventing cold starts on free-tier services.
 // Logic:
 // 1. Define a list of service endpoints.
 // 2. Set an interval (e.g., every 5 minutes).
@@ -15,7 +24,7 @@ const app = express();
 // 4. Log the success/failure of each ping.
 
 app.get('/health', (req, res) => {
-    res.send('DevOps Agent is running');
+    res.send('DevOps Agent is running with GitHub and WebSearch MCPs');
 });
 
 app.listen(3000, () => {
