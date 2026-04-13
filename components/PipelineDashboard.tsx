@@ -38,6 +38,11 @@ import {
   onSnapshot
 } from "firebase/firestore";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { GoogleGenAI, Type } from "@google/genai";
+import Markdown from 'react-markdown';
+import EcosystemGraph from './EcosystemGraph';
+
+const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
 
 type Status = "idle" | "running" | "completed" | "error";
 
@@ -58,7 +63,20 @@ interface McpTool {
 }
 
 export default function PipelineDashboard() {
-  const [prompt, setPrompt] = useState("قم بتهيئة الهيكل الأساسي (Scaffolding) لهذا المستودع الجديد (Gemini-Micro-Services-and-Apss-and-Agents-Ecosystem). قم بإنشاء هيكلية خدمات مصغرة (Microservices) متكاملة، مع مجلدات منفصلة لكل وكيل (UI Agent, DB Agent, DevOps Agent, Research Agent). استخدم تقنيات TurboQuant لضمان كفاءة عالية، واربط الخدمات بـ Firebase و Neon و Render (Free Tier). اجعل النظام قابلاً للتوسع.");
+  const [prompt, setPrompt] = useState(`أيها الوكيل التنفيذي، بصفتي 'دماغ أمريكي'، آمرك ببدء تهيئة الهيكل الأساسي (Scaffolding) لمستودع Gemini-Micro-Services-and-Apss-and-Agents-Ecosystem داخل مسار sources/github/Moeabdelaziz007/Micro-services-. نفذ المهام المعمارية التالية بدقة صارمة لدعم بنية Zero-Cost و TurboQuant:
+
+بنية المونو-ريبو (Monorepo): أنشئ الهيكلية التالية للمجلدات:
+/agents/ui-agent (لواجهة المستخدم)
+/agents/db-agent (لإدارة Neon و Firebase)
+/agents/devops-agent (وكيل المراقبة والتشغيل الذاتي)
+/agents/research-agent (وكيل البحث وجمع البيانات)
+/shared/config (للإعدادات المشتركة)
+/shared/mcp-core (لبروتوكولات الاتصال بين الوكلاء)
+قوالب الاتصال (Boilerplates): داخل /shared/config، قم بإنشاء ملفات تكوين مبدئية وآمنة للاتصال بكل من Firebase (NoSQL/Auth) و Neon (Serverless Postgres)، مع قراءة القيم من ملفات .env.
+تهيئة الاعتماديات: قم بإنشاء package.json أو requirements.txt داخل مجلد كل وكيل. تأكد من تضمين مكتبات @google/genai (أو ما يعادلها لـ Gemini)، وحزم mcp-sdk، وإطارات عمل خفيفة وسريعة (مثل Express/FastAPI).
+المحاكاة المحلية: أنشئ ملف docker-compose.yml في الجذر الأساسي لربط كافة الوكلاء معاً ضمن شبكة داخلية محاكية لبيئة شبكات Render الدقيقة.
+بصمة TurboQuant: أضف تعليقات توجيهية (Inline Comments) واضحة في كود devops-agent تحدد أين سيتم بناء نظام "مضاد السبات" (Anti-Cold-Start Ping System) لاحقاً.
+التزم بكتابة كود نظيف، قابل للتوسع، ومستعد للاندماج الفوري مع آليات الذكاء الاصطناعي.`);
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoDebug, setAutoDebug] = useState(true);
   const [isListening, setIsListening] = useState(false);
@@ -76,6 +94,11 @@ export default function PipelineDashboard() {
   const [memory, setMemory] = useState<any>(null);
   const [ecosystem, setEcosystem] = useState<any>(null);
   const [isMemoryLoading, setIsMemoryLoading] = useState(true);
+  const [commits, setCommits] = useState<any[]>([]);
+  const [isCommitsLoading, setIsCommitsLoading] = useState(false);
+  const [commitsError, setCommitsError] = useState<string | null>(null);
+  const [brainstorming, setBrainstorming] = useState<string>("");
+  const [isBrainstorming, setIsBrainstorming] = useState(false);
   
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const seenActivities = useRef<Set<string>>(new Set());
@@ -175,6 +198,51 @@ export default function PipelineDashboard() {
       }
     });
 
+    const fetchGithubCommits = async () => {
+      if (!selectedSource) return;
+      setIsCommitsLoading(true);
+      setCommitsError(null);
+      try {
+        let owner = "";
+        let repo = "";
+        
+        const githubUrlMatch = selectedSource.match(/github\.com\/([^/]+)\/([^/.]+)/);
+        const sourceNameMatch = selectedSource.match(/sources\/github\/([^/]+)\/([^/.]+)/);
+        const simpleMatch = selectedSource.match(/^([^/]+)\/([^/.]+)$/);
+
+        if (githubUrlMatch) {
+          owner = githubUrlMatch[1];
+          repo = githubUrlMatch[2];
+        } else if (sourceNameMatch) {
+          owner = sourceNameMatch[1];
+          repo = sourceNameMatch[2];
+        } else if (simpleMatch) {
+          owner = simpleMatch[1];
+          repo = simpleMatch[2];
+        }
+
+        if (owner && repo) {
+          const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=5`);
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setCommits(data);
+          } else {
+            throw new Error("Invalid data format received from GitHub");
+          }
+        } else {
+           throw new Error(`Could not parse GitHub URL from source: ${selectedSource}`);
+        }
+      } catch (err) {
+        console.error("GitHub fetch error:", err);
+        setCommitsError("فشل جلب التحديثات. تأكد من صحة المستودع أو تحقق من اتصالك بالإنترنت.");
+      } finally {
+        setIsCommitsLoading(false);
+      }
+    };
+
     const fetchSources = async () => {
       try {
         const res = await fetch('/api/jules', {
@@ -190,7 +258,7 @@ export default function PipelineDashboard() {
         }
 
         if (data.sources) {
-          const targetRepo = 'Gemini-Micro-Services-and-Apss-and-Agents-Ecosystem';
+          const targetRepo = 'Micro-services-';
           const filteredSources = data.sources.filter((s: any) => s.name.includes(targetRepo));
           
           setSources(filteredSources);
@@ -206,12 +274,16 @@ export default function PipelineDashboard() {
       }
     };
     fetchSources();
+    fetchGithubCommits();
+
+    const githubInterval = setInterval(fetchGithubCommits, 60000); // Update every minute
 
     return () => {
       unsubscribeAuth();
+      clearInterval(githubInterval);
       if (pollInterval.current) clearInterval(pollInterval.current);
     };
-  }, [addLog]);
+  }, [addLog, selectedSource]);
 
   const updateStepStatus = (stepId: string, status: Status) => {
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
@@ -381,8 +453,56 @@ export default function PipelineDashboard() {
           }
         });
       }
-    } catch (err) {
-      console.error("Polling error:", err);
+    } catch (err: any) {
+      if (err.message !== 'Failed to fetch' && !err.message.includes('fetch')) {
+        console.error("Polling error:", err);
+      }
+    }
+  };
+
+  const runBrainstorming = async () => {
+    setIsBrainstorming(true);
+    setBrainstorming("");
+    addLog("🤖 [أمريكي - Brain] جاري التفكير والتحليل باستخدام Gemini 3.1 Pro...");
+    speakText("جاري التفكير والتحليل العميق");
+
+    try {
+      const promptContext = `
+        You are Amrikyy's Brain (دماغ أمريكي), the core intelligence of a self-improving, self-evolving microservices ecosystem.
+        Your ultimate goal is to create a "Meta Loop" of continuous self-improvement, building a massive ecosystem of microservices, Gemini tools, Google Apps integrations, APIs, and MCPs all in one place, using ZERO-COST architecture.
+
+        Current Ecosystem State: ${JSON.stringify(ecosystem || {})}
+        Memory Patterns: ${memory?.patterns?.join(", ") || "None"}
+        Current User Goal: ${prompt}
+        Target Repo: ${selectedSource}
+        
+        Task:
+        1. SEARCH & ANALYZE: Use Google Search to find the latest best practices for Gemini APIs, MCPs, and zero-cost serverless architectures if needed. Analyze our current ecosystem state and codebase direction.
+        2. META-LOOP EVOLUTION: How should the system evolve itself in this current cycle? What self-improvement step is needed?
+        3. BRAINSTORM: Suggest 3 innovative, zero-cost microservices or agents we should build NEXT to expand the Google/Gemini ecosystem.
+        4. IMMEDIATE ACTION: Decide on the absolute best next task to implement right now.
+        5. EXECUTION PROMPT: Provide the exact, detailed prompt that should be sent to the execution agent for the next session.
+        
+        Respond ONLY in Arabic, using a highly intelligent, confident, and visionary tone.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: promptContext,
+        config: {
+          tools: [{ googleSearch: {} }],
+          toolConfig: { includeServerSideToolInvocations: true }
+        }
+      });
+
+      const result = response.text;
+      setBrainstorming(result);
+      addLog("🤖 [أمريكي - Brain] اكتملت عملية التفكير والتحليل.");
+      speakText("اكتملت عملية التحليل، لدي بعض الأفكار الجديدة");
+    } catch (err: any) {
+      addLog(`فشل عملية التفكير: ${err.message}`, true);
+    } finally {
+      setIsBrainstorming(false);
     }
   };
 
@@ -430,10 +550,11 @@ Persona: You are a highly confident, genius-level software architect with superp
 Superpowers: TurboQuant compression mastery, instant bug fixing, and real-time system orchestration.
 
 --- ZERO-COST & EFFICIENCY STRATEGY ---
-Your core mandate is to build microservices with ZERO-COST.
+Your core mandate is to build a self-sustaining microservices ecosystem that works on ITSELF.
 1. TOOLS: Use ONLY free-tier services (Firebase, GitHub, Brave Search API, v0, Neon, Render, Context7, TurboQuant).
 2. MODELS: Orchestrate tasks using Gemini 1.5 Flash for speed/cost-efficiency, and Gemini 1.5 Pro for complex reasoning.
 3. NOTEBOOKLM: Use NotebookLM as a companion tool for document analysis, but for programmatic tasks, leverage Gemini API directly to maintain zero-cost automation.
+4. SELF-BUILDING: The project must be able to deploy, manage, and extend its own microservices ecosystem smartly.
 
 --- RECALLED MEMORY & CONTEXT ---
 ${memoryContext}
@@ -685,17 +806,110 @@ ${finalPrompt}`;
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   key={index}
-                  className={`${log.includes('خطأ') ? 'text-red-400' : log.includes('بنجاح') ? 'text-green-400' : log.includes('[Auto-Debug]') ? 'text-yellow-400' : ''}`}
+                  className={`${log.includes('خطأ') ? 'text-red-400' : log.includes('بنجاح') ? 'text-green-400' : log.includes('[Auto-Debug]') ? 'text-yellow-400' : log.includes('[أمريكي - Brain]') ? 'text-purple-400' : ''}`}
                 >
                   {log}
                 </motion.div>
               ))}
             </div>
           </div>
+
+          {/* GitHub Live Status */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <Github className="w-5 h-5 text-neutral-400" />
+              حالة المستودع المباشرة (Live Repo)
+            </h2>
+            <div className="space-y-4">
+              {isCommitsLoading && commits.length === 0 ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-neutral-600" />
+                </div>
+              ) : commitsError ? (
+                <div className="flex items-center gap-2 text-red-400 bg-red-500/10 p-4 rounded-xl border border-red-500/20">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{commitsError}</span>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {commits.map((commit, i) => (
+                    <a 
+                      key={i} 
+                      href={commit.html_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="block p-3 bg-neutral-950 rounded-lg border border-neutral-800 flex flex-col gap-1 hover:bg-neutral-800 transition-colors group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-400 truncate max-w-[150px] group-hover:text-blue-300 transition-colors">
+                          {commit.commit.author.name}
+                        </span>
+                        <span className="text-[10px] text-neutral-600">
+                          {new Date(commit.commit.author.date).toLocaleString('ar-EG')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-300 line-clamp-2">{commit.commit.message}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <GitBranch className="w-3 h-3 text-neutral-600" />
+                        <span className="text-[10px] text-neutral-500 font-mono">{commit.sha.substring(0, 7)}</span>
+                      </div>
+                    </a>
+                  ))}
+                  {commits.length === 0 && !commitsError && (
+                    <div className="text-center py-4 text-neutral-600 text-sm">
+                      لا توجد بيانات متاحة حالياً
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Pipeline Steps & Memory Bank */}
         <div className="space-y-8 h-fit">
+          {/* Ecosystem Graph */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <LinkIcon className="w-5 h-5 text-emerald-400" />
+              التمثيل المرئي للنظام البيئي (Ecosystem Graph)
+            </h2>
+            <EcosystemGraph services={ecosystem?.deployedServices || []} />
+          </div>
+
+          {/* Amrikyy's Brain (Brainstorming) */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 blur-3xl -mr-16 -mt-16" />
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <BrainCircuit className="w-6 h-6 text-purple-400" />
+                دماغ أمريكي (Amrikyy&apos;s Brain)
+              </h2>
+              <button
+                onClick={runBrainstorming}
+                disabled={isBrainstorming || isProcessing}
+                className="p-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 rounded-lg transition-all disabled:opacity-50"
+                title="تفكير وعصف ذهني"
+              >
+                {isBrainstorming ? <Loader2 className="w-5 h-5 animate-spin" /> : <Cpu className="w-5 h-5" />}
+              </button>
+            </div>
+
+            {brainstorming ? (
+              <div className="prose prose-invert prose-sm max-w-none bg-neutral-950/50 p-4 rounded-xl border border-purple-500/20 max-h-[400px] overflow-y-auto">
+                <Markdown>{brainstorming}</Markdown>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                <div className="w-16 h-16 bg-neutral-950 rounded-full flex items-center justify-center border border-neutral-800">
+                  <BrainCircuit className="w-8 h-8 text-neutral-700" />
+                </div>
+                <p className="text-sm text-neutral-500 max-w-[200px]">
+                  اضغط على الأيقونة لتفعيل التفكير العميق والعصف الذهني للخطوات القادمة
+                </p>
+              </div>
+            )}
+          </div>
           {/* Pipeline Steps */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-xl font-semibold mb-6">مسار الجلسة</h2>
