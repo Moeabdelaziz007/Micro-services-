@@ -7,8 +7,6 @@ export function validateConfig(requiredKeys: string[]) {
   if (missingKeys.length > 0) {
     const errorMsg = `[Config Error] Missing required environment variables: ${missingKeys.join(', ')}`;
     console.error(errorMsg);
-    // In a real microservice, we might want to throw here to prevent startup
-    // throw new Error(errorMsg); 
     return { valid: false, missingKeys };
   }
   
