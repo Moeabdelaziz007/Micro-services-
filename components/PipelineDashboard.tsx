@@ -340,6 +340,16 @@ export default function PipelineDashboard() {
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const seenActivities = useRef<Set<string>>(new Set());
   const initialized = useRef(false);
+  const ecosystemRef = useRef<any>(null);
+  const subAgentsRef = useRef<SubAgent[]>([]);
+
+  useEffect(() => {
+    ecosystemRef.current = ecosystem;
+  }, [ecosystem]);
+
+  useEffect(() => {
+    subAgentsRef.current = subAgents;
+  }, [subAgents]);
 
   const performanceInsights = useMemo(() => {
     if (!memory?.agentFeedback) return { insights: {}, chartData: [] };
@@ -838,6 +848,38 @@ export default function PipelineDashboard() {
         // Reverse to process oldest first if they come newest first
         const activities = [...data.activities].reverse();
         
+        // Accumulators for batched updates
+        const logsToAppend: any[] = [];
+        const subAgentUpdates = new Map<string, { status: Status, error?: string }>();
+        const stepUpdates = new Map<string, Status>();
+        const ecosystemStatusUpdates = new Map<string, Status>();
+        const newEcosystemServices: any[] = [];
+        let sessionFinished = false;
+
+        const localAddLog = (message: string, isError = false, tool: LogEntry['tool'] = 'other', context?: any) => {
+          const timestamp = new Date().toLocaleTimeString('ar-EG');
+          let enhancedContext = { ...context };
+          if (isError && !enhancedContext.memorySnippet && memoryRef.current?.patterns?.length > 0) {
+            enhancedContext.memorySnippet = `Pattern: ${memoryRef.current.patterns[0]}`;
+          }
+          logsToAppend.push({ timestamp, message, isError, tool, ...enhancedContext });
+
+          // Mimic exactly the original addLog logic for errors
+          if (isError) {
+            logsToAppend.push({
+              timestamp,
+              message: `🤖 [أمريكي - Monitor] تنبيه: تم رصد خطأ في ${enhancedContext.subAgentId || 'النظام'}! جاري التحليل...`,
+              isError: false,
+              tool: 'system'
+            });
+            speakText("تم رصد خطأ، جاري التحليل");
+          }
+        };
+
+        const localUpdateStepStatus = (stepId: string, status: Status) => {
+          stepUpdates.set(stepId, status);
+        };
+
         activities.forEach((act: any) => {
           if (!seenActivities.current.has(act.id)) {
             seenActivities.current.add(act.id);
@@ -846,26 +888,24 @@ export default function PipelineDashboard() {
               if (!text) return;
               const lowerText = text.toLowerCase();
               
-              const matchedAgents = subAgents.filter(agent => agent.keywords.some(kw => lowerText.includes(kw)));
+              // Use subAgentsRef.current to avoid stale closures
+              const matchedAgents = subAgentsRef.current.filter(agent => agent.keywords.some(kw => lowerText.includes(kw)));
               
               if (matchedAgents.length > 0) {
                 matchedAgents.forEach(agent => {
-                  addLog(`[Sub-Agent: ${agent.name}] ${actionDesc}`, isError, 'system', { subAgentId: agent.id, functionName: 'pollActivities' });
+                  localAddLog(`[Sub-Agent: ${agent.name}] ${actionDesc}`, isError, 'system', { subAgentId: agent.id, functionName: 'pollActivities' });
                 });
                 
-                setSubAgents(prev => prev.map(agent => {
-                  if (matchedAgents.some(ma => ma.id === agent.id)) {
-                    const errorMsg = isError ? `${actionDesc}\nالتفاصيل:\n${detailedError || 'غير متوفر'}` : undefined;
-                    return { ...agent, status: isError ? 'error' : intendedStatus, error: errorMsg };
-                  }
-                  return agent;
-                }));
+                matchedAgents.forEach(ma => {
+                  const errorMsg = isError ? `${actionDesc}\nالتفاصيل:\n${detailedError || 'غير متوفر'}` : undefined;
+                  subAgentUpdates.set(ma.id, { status: isError ? 'error' : intendedStatus, error: errorMsg });
+                });
               }
             };
 
             if (act.planGenerated) {
-              updateStepStatus("build", "completed");
-              addLog(`[أمريكي] تم إنشاء خطة عمل جديدة.`);
+              localUpdateStepStatus("build", "completed");
+              localAddLog(`[أمريكي] تم إنشاء خطة عمل جديدة.`);
               speakText("تم إنشاء خطة العمل بنجاح");
               
               if (act.planGenerated.plan?.steps) {
@@ -877,26 +917,22 @@ export default function PipelineDashboard() {
                   if (lowerDesc.includes("microservice") || lowerDesc.includes("agent") || lowerDesc.includes("service")) {
                      const serviceMatch = lowerDesc.match(/([a-z0-9-]+-(agent|service|api))/);
                      if (serviceMatch) {
-                       setEcosystem((prev: any) => {
-                         const exists = prev.deployedServices.find((s: any) => s.name === serviceMatch[1]);
-                         if (!exists) {
-                           addLog(`[النظام البيئي] تم اكتشاف خدمة جديدة في الخطة: ${serviceMatch[1]}`);
-                           return {
-                             ...prev,
-                             deployedServices: [...prev.deployedServices, { name: serviceMatch[1], status: 'stopped' }]
-                           };
-                         }
-                         return prev;
-                       });
+                       // Use ecosystemRef.current to avoid stale closures
+                       const exists = ecosystemRef.current?.deployedServices.find((s: any) => s.name === serviceMatch[1]);
+                       const alreadyAdded = newEcosystemServices.find(s => s.name === serviceMatch[1]);
+                       if (!exists && !alreadyAdded) {
+                         localAddLog(`[النظام البيئي] تم اكتشاف خدمة جديدة في الخطة: ${serviceMatch[1]}`);
+                         newEcosystemServices.push({ name: serviceMatch[1], status: 'stopped' });
+                       }
                      }
                   }
                 });
               }
             } else if (act.progressUpdated) {
-              updateStepStatus("check", "running");
-              addLog(`[أمريكي] ${act.progressUpdated.title}`);
+              localUpdateStepStatus("check", "running");
+              localAddLog(`[أمريكي] ${act.progressUpdated.title}`);
               if (act.progressUpdated.description) {
-                addLog(`التفاصيل: ${act.progressUpdated.description}`);
+                localAddLog(`التفاصيل: ${act.progressUpdated.description}`);
                 
                 // Detect microservice deployment/status update
                 const lowerDesc = act.progressUpdated.description.toLowerCase();
@@ -904,19 +940,8 @@ export default function PipelineDashboard() {
                 if (serviceMatch) {
                    const isRunning = lowerDesc.includes("deploy") || lowerDesc.includes("start") || lowerDesc.includes("run");
                    const isError = lowerDesc.includes("error") || lowerDesc.includes("fail");
-                   
-                   setEcosystem((prev: any) => {
-                     const services = [...prev.deployedServices];
-                     const idx = services.findIndex((s: any) => s.name === serviceMatch[1]);
-                     const newStatus = isError ? 'error' : (isRunning ? 'running' : 'stopped');
-                     
-                     if (idx >= 0) {
-                       services[idx] = { ...services[idx], status: newStatus };
-                     } else {
-                       services.push({ name: serviceMatch[1], status: newStatus });
-                     }
-                     return { ...prev, deployedServices: services };
-                   });
+                   const newStatus = isError ? 'error' : (isRunning ? 'running' : 'stopped');
+                   ecosystemStatusUpdates.set(serviceMatch[1], newStatus);
                 }
               }
               
@@ -924,10 +949,10 @@ export default function PipelineDashboard() {
 
             } else if (act.bashOutput) {
               const isError = act.bashOutput.exitCode && act.bashOutput.exitCode > 0;
-              addLog(`[Terminal] ${act.bashOutput.command || 'أمر'}`, isError);
+              localAddLog(`[Terminal] ${act.bashOutput.command || 'أمر'}`, isError);
               
               if (act.bashOutput.output) {
-                addLog(`المخرجات: ${act.bashOutput.output}`, isError);
+                localAddLog(`المخرجات: ${act.bashOutput.output}`, isError);
               }
 
               detectAndLogTools(
@@ -944,22 +969,67 @@ export default function PipelineDashboard() {
               }
               
             } else if (act.sessionCompleted) {
-              updateStepStatus("check", "completed");
-              updateStepStatus("debug", "completed");
-              addLog(`[أمريكي] ✅ اكتملت الجلسة بنجاح! تم رفع التعديلات.`);
+              localUpdateStepStatus("check", "completed");
+              localUpdateStepStatus("debug", "completed");
+              localAddLog(`[أمريكي] ✅ اكتملت الجلسة بنجاح! تم رفع التعديلات.`);
               speakText("اكتملت الجلسة بنجاح، عمل رائع");
-              
-              // Mark all running agents as completed
-              setSubAgents(prev => prev.map(agent => agent.status === 'running' ? { ...agent, status: 'completed' } : agent));
-              
-              // Update Memory
-              updateMemoryAfterSession(sid);
-
-              setIsProcessing(false);
-              if (pollInterval.current) clearInterval(pollInterval.current);
+              sessionFinished = true;
             }
           }
         });
+
+        // Apply Batched Updates
+        if (logsToAppend.length > 0) {
+          setLogs(prev => [...prev, ...logsToAppend].slice(-100));
+        }
+
+        if (subAgentUpdates.size > 0 || sessionFinished) {
+          setSubAgents(prev => prev.map(agent => {
+            if (subAgentUpdates.has(agent.id)) {
+              const update = subAgentUpdates.get(agent.id)!;
+              return { ...agent, status: update.status, error: update.error };
+            }
+            if (sessionFinished && agent.status === 'running') {
+              return { ...agent, status: 'completed' };
+            }
+            return agent;
+          }));
+        }
+
+        if (stepUpdates.size > 0) {
+          setSteps(prev => prev.map(s => stepUpdates.has(s.id) ? { ...s, status: stepUpdates.get(s.id)! } : s));
+        }
+
+        if (ecosystemStatusUpdates.size > 0 || newEcosystemServices.length > 0) {
+          setEcosystem((prev: any) => {
+            const services = [...prev.deployedServices];
+
+            // Add new services
+            newEcosystemServices.forEach(ns => {
+              if (!services.some(s => s.name === ns.name)) {
+                services.push(ns);
+              }
+            });
+
+            // Update statuses
+            ecosystemStatusUpdates.forEach((status, name) => {
+              const idx = services.findIndex(s => s.name === name);
+              if (idx >= 0) {
+                services[idx] = { ...services[idx], status };
+              } else {
+                services.push({ name, status });
+              }
+            });
+
+            return { ...prev, deployedServices: services };
+          });
+        }
+
+        if (sessionFinished) {
+          updateMemoryAfterSession(sid);
+          setIsProcessing(false);
+          if (pollInterval.current) clearInterval(pollInterval.current);
+        }
       }
     } catch (err: any) {
       if (err.message !== 'Failed to fetch' && !err.message.includes('fetch')) {
