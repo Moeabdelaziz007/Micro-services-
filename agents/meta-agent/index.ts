@@ -31,6 +31,10 @@ app.post('/auto-patch', async (req, res) => {
     res.send(`Auto-patching ${repo} for issue: ${issue} using ${GitHubMCP.name} and ${WebSearchMCP.name}`);
 });
 
+app.get('/health', (req, res) => {
+    res.send('Meta-Agent is running');
+});
+
 app.listen(3000, () => {
     console.log('Meta-Agent (Code Research & Auto-Patch) listening on port 3000');
 });

@@ -16,12 +16,36 @@ if (!valid) {
 
 console.log(`DevOps Agent initializing with tools: ${GitHubMCP.name}, ${WebSearchMCP.name}`);
 
-// TODO: Build Anti-Cold-Start Ping System here.
-// Logic:
-// 1. Define a list of service endpoints.
-// 2. Set an interval (e.g., every 5 minutes).
-// 3. Send a lightweight GET request to each endpoint.
-// 4. Log the success/failure of each ping.
+// Anti-Cold-Start Ping System
+const SERVICE_ENDPOINTS = [
+    'http://ui-agent:3000/health',
+    'http://db-agent:3000/health',
+    'http://research-agent:3000/health',
+    'http://meta-agent:3000/health'
+];
+
+const pingServices = async () => {
+    console.log(`[Ping System] Starting ping cycle at ${new Date().toISOString()}`);
+
+    for (const endpoint of SERVICE_ENDPOINTS) {
+        try {
+            const response = await fetch(endpoint);
+            if (response.ok) {
+                console.log(`[Ping Success] ${endpoint}: ${response.status}`);
+            } else {
+                console.error(`[Ping Failed] ${endpoint}: ${response.status}`);
+            }
+        } catch (error) {
+            console.error(`[Ping Error] ${endpoint}:`, error instanceof Error ? error.message : error);
+        }
+    }
+};
+
+// Set interval to 5 minutes (300,000 ms)
+setInterval(pingServices, 5 * 60 * 1000);
+
+// Initial ping on startup
+pingServices();
 
 app.get('/health', (req, res) => {
     res.send('DevOps Agent is running with GitHub and WebSearch MCPs');
