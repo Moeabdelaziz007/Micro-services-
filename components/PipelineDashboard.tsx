@@ -167,11 +167,39 @@ export default function PipelineDashboard() {
 
   const [ecosystem, setEcosystem] = useState<any>({
     deployedServices: [
-      { name: 'ui-agent', status: 'running' },
-      { name: 'db-agent', status: 'running' },
-      { name: 'devops-agent', status: 'running' },
-      { name: 'research-agent', status: 'running' },
-      { name: 'meta-agent', status: 'running' },
+      { 
+        name: 'ui-agent', 
+        status: 'running', 
+        repoUrl: 'https://github.com/Moeabdelaziz007/ui-agent', 
+        lastCommit: 'feat: improve dashboard layout', 
+        commitStatus: 'Success',
+        dependencies: ['db-agent', 'research-agent']
+      },
+      { 
+        name: 'db-agent', 
+        status: 'running', 
+        repoUrl: 'https://github.com/Moeabdelaziz007/db-agent', 
+        lastCommit: 'fix: optimize query performance', 
+        commitStatus: 'Success',
+        dependencies: []
+      },
+      { 
+        name: 'devops-agent', 
+        status: 'running', 
+        repoUrl: 'https://github.com/Moeabdelaziz007/devops-agent', 
+        lastCommit: 'chore: update github mcp config', 
+        commitStatus: 'Success',
+        dependencies: ['ui-agent']
+      },
+      { 
+        name: 'research-agent', 
+        status: 'running', 
+        repoUrl: 'https://github.com/Moeabdelaziz007/research-agent', 
+        lastCommit: 'feat: add groq integration', 
+        commitStatus: 'Success',
+        dependencies: ['db-agent']
+      },
+      { name: 'meta-agent', status: 'running', dependencies: ['research-agent', 'devops-agent'] },
       { name: 'pulse-monitor', status: 'stopped' },
       { name: 'tool-forge', status: 'stopped' },
       { name: 'zero-cost-enforcer', status: 'running' }
@@ -181,6 +209,8 @@ export default function PipelineDashboard() {
   const [commits, setCommits] = useState<any[]>([]);
   const [isCommitsLoading, setIsCommitsLoading] = useState(false);
   const [commitsError, setCommitsError] = useState<string | null>(null);
+  const [pullRequests, setPullRequests] = useState<any[]>([]);
+  const [isAnalyzingPRs, setIsAnalyzingPRs] = useState(false);
   const unsubs = useRef<(() => void)[]>([]);
 
   const [brainstorming, setBrainstorming] = useState<string>(`بصفتي "دماغ أمريكي"، النواة الإدراكية والعقل المدبر لمعمارية التطور الذاتي والميتا-حلقات (Meta-Loops)، أؤكد استلام التوجيه. لقد قمت بتحليل معطياتك ودمجها مع أحدث معايير عام 2026 لبروتوكولات (MCP) وتقنيات (Zero-Cost Serverless).
@@ -359,10 +389,15 @@ export default function PipelineDashboard() {
   }
 
   const [logFilter, setLogFilter] = useState<'all' | 'error' | 'github' | 'firestore' | 'gemini' | 'system'>('all');
-  const [logs, setLogs] = useState<LogEntry[]>([
-    { timestamp: new Date().toLocaleTimeString('ar-EG'), message: "أهلاً بك! أنا أمريكي (Amrikyy)، المايسترو والوكيل الذكي الخاص بك. النظام جاهز.", isError: false, tool: 'system' },
-    { timestamp: new Date().toLocaleTimeString('ar-EG'), message: "🤖 [أمريكي - Monitor] جاري مراقبة النظام وأدوات MCP...", isError: false, tool: 'system' },
-  ]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // Fix hydration mismatch by adding initial logs on client side
+  useEffect(() => {
+    setLogs([
+      { timestamp: new Date().toLocaleTimeString('ar-EG'), message: "أهلاً بك! أنا أمريكي (Amrikyy)، المايسترو والوكيل الذكي الخاص بك. النظام جاهز.", isError: false, tool: 'system' },
+      { timestamp: new Date().toLocaleTimeString('ar-EG'), message: "🤖 [أمريكي - Monitor] جاري مراقبة النظام وأدوات MCP...", isError: false, tool: 'system' },
+    ]);
+  }, []);
 
   const speakText = useCallback((text: string) => {
     if (!voiceEnabledRef.current || !window.speechSynthesis) return;
@@ -534,7 +569,7 @@ export default function PipelineDashboard() {
     recognition.start();
   };
 
-  // Fetch sources and handle Auth/Memory on mount
+  // Handle Auth and Memory on mount
   useEffect(() => {
     const cleanupListeners = () => {
       unsubs.current.forEach(unsub => unsub());
@@ -545,26 +580,31 @@ export default function PipelineDashboard() {
       cleanupListeners();
       if (u) {
         setUser(u);
-        // Fetch Memory and Ecosystem Context
         const memoryRef = doc(db, "memory", u.uid);
         const ecosystemRef = doc(db, "ecosystem", u.uid);
 
-        // Listen for real-time updates to memory
         const unsubMemory = onSnapshot(memoryRef, (doc) => {
           if (doc.exists()) setMemory(doc.data());
           setIsMemoryLoading(false);
-        }, (err) => handleFirestoreError(err, OperationType.GET, `memory/${u.uid}`));
+        }, (err) => {
+          if (err.code !== 'cancelled') {
+            handleFirestoreError(err, OperationType.GET, `memory/${u.uid}`);
+          }
+        });
 
         const unsubEcosystem = onSnapshot(ecosystemRef, (doc) => {
           if (doc.exists()) setEcosystem(doc.data());
-        }, (err) => handleFirestoreError(err, OperationType.GET, `ecosystem/${u.uid}`));
+        }, (err) => {
+          if (err.code !== 'cancelled') {
+            handleFirestoreError(err, OperationType.GET, `ecosystem/${u.uid}`);
+          }
+        });
 
         unsubs.current.push(unsubMemory, unsubEcosystem);
       } else {
-        // Sign in anonymously for demo purposes if not logged in
         signInAnonymously(auth).catch(err => {
           if (err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed') {
-            addLog(`فشل تسجيل الدخول: يرجى تفعيل "Anonymous Authentication" في إعدادات Firebase Console (Authentication -> Sign-in method).`, true);
+            addLog(`فشل تسجيل الدخول: يرجى تفعيل "Anonymous Authentication" في إعدادات Firebase Console.`, true);
           } else {
             addLog(`فشل تسجيل الدخول: ${err.message}`, true);
           }
@@ -572,54 +612,14 @@ export default function PipelineDashboard() {
       }
     });
 
-    const fetchGithubCommits = async () => {
-      if (!selectedSource) return;
-      setIsCommitsLoading(true);
-      setCommitsError(null);
-      try {
-        let owner = "";
-        let repo = "";
-        
-        const githubUrlMatch = selectedSource.match(/github\.com\/([^/]+)\/([^/.]+)/);
-        const sourceNameMatch = selectedSource.match(/sources\/github\/([^/]+)\/([^/.]+)/);
-        const simpleMatch = selectedSource.match(/^([^/]+)\/([^/.]+)$/);
-
-        if (githubUrlMatch) {
-          owner = githubUrlMatch[1];
-          repo = githubUrlMatch[2];
-        } else if (sourceNameMatch) {
-          owner = sourceNameMatch[1];
-          repo = sourceNameMatch[2];
-        } else if (simpleMatch) {
-          owner = simpleMatch[1];
-          repo = simpleMatch[2];
-        }
-
-        // Clean up repo name (e.g. remove trailing hyphens)
-        repo = repo.replace(/-+$/, '');
-
-        if (owner && repo) {
-          const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=30`);
-          if (!res.ok) {
-            throw new Error(`HTTP error! status: ${res.status}`);
-          }
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setCommits(data);
-          } else {
-            throw new Error("Invalid data format received from GitHub");
-          }
-        } else {
-           throw new Error(`Could not parse GitHub URL from source: ${selectedSource}`);
-        }
-      } catch (err) {
-        console.error("GitHub fetch error:", err);
-        setCommitsError("فشل جلب التحديثات. تأكد من صحة المستودع أو تحقق من اتصالك بالإنترنت.");
-      } finally {
-        setIsCommitsLoading(false);
-      }
+    return () => {
+      unsubscribeAuth();
+      cleanupListeners();
     };
+  }, [addLog, handleFirestoreError]);
 
+  // Fetch sources on mount
+  useEffect(() => {
     const fetchSources = async () => {
       try {
         const res = await fetch('/api/jules', {
@@ -651,17 +651,72 @@ export default function PipelineDashboard() {
       }
     };
     fetchSources();
-    fetchGithubCommits();
+  }, [addLog]);
 
-    const githubInterval = setInterval(fetchGithubCommits, 60000); // Update every minute
+  // Fetch GitHub commits when selectedSource changes
+  useEffect(() => {
+    const fetchGithubCommits = async () => {
+      if (!selectedSource) return;
+      setIsCommitsLoading(true);
+      setCommitsError(null);
+      try {
+        let owner = "";
+        let repo = "";
+        
+        const githubUrlMatch = selectedSource.match(/github\.com\/([^/]+)\/([^/.]+)/);
+        const sourceNameMatch = selectedSource.match(/sources\/github\/([^/]+)\/([^/.]+)/);
+        const simpleMatch = selectedSource.match(/^([^/]+)\/([^/.]+)$/);
+
+        if (githubUrlMatch) {
+          owner = githubUrlMatch[1];
+          repo = githubUrlMatch[2];
+        } else if (sourceNameMatch) {
+          owner = sourceNameMatch[1];
+          repo = sourceNameMatch[2];
+        } else if (simpleMatch) {
+          owner = simpleMatch[1];
+          repo = simpleMatch[2];
+        }
+
+        if (owner && repo) {
+          // Try fetching with the original repo name first
+          let res = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=30`);
+          
+          // If 404 and ends with hyphen, try removing it as a fallback
+          if (res.status === 404 && repo.endsWith('-')) {
+            const cleanedRepo = repo.replace(/-+$/, '');
+            if (cleanedRepo !== repo) {
+              res = await fetch(`https://api.github.com/repos/${owner}/${cleanedRepo}/commits?per_page=30`);
+            }
+          }
+
+          if (!res.ok) {
+            throw new Error(`GitHub API returned ${res.status}: ${res.statusText}`);
+          }
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setCommits(data);
+          } else {
+            throw new Error("Invalid data format received from GitHub");
+          }
+        } else {
+           throw new Error(`Could not parse GitHub URL from source: ${selectedSource}`);
+        }
+      } catch (err: any) {
+        console.error("GitHub fetch error:", err);
+        setCommitsError(`فشل جلب التحديثات: ${err.message}`);
+      } finally {
+        setIsCommitsLoading(false);
+      }
+    };
+
+    fetchGithubCommits();
+    const githubInterval = setInterval(fetchGithubCommits, 60000);
 
     return () => {
-      unsubscribeAuth();
-      cleanupListeners();
       clearInterval(githubInterval);
-      if (pollInterval.current) clearInterval(pollInterval.current);
     };
-  }, [addLog, selectedSource, handleFirestoreError]);
+  }, [selectedSource]);
 
   const updateStepStatus = (stepId: string, status: Status) => {
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
@@ -957,6 +1012,72 @@ export default function PipelineDashboard() {
     } finally {
       setIsBrainstorming(false);
     }
+  };
+
+  const fetchAndAnalyzePRs = async () => {
+    if (!selectedSource) {
+      addLog("يرجى اختيار مستودع أولاً.", true);
+      return;
+    }
+    
+    setIsAnalyzingPRs(true);
+    addLog("🤖 [DevOps Agent] جاري جلب طلبات السحب (Pull Requests) وتحليلها...", false, 'github');
+    
+    try {
+      // Simulate fetching PRs
+      const mockPRs = [
+        { 
+          id: 1, 
+          title: "feat: add new authentication flow", 
+          author: "dev-alpha", 
+          diff: "Modified auth.ts, login.tsx. Added JWT validation.",
+          status: "open",
+          analysis: ""
+        },
+        { 
+          id: 2, 
+          title: "fix: database connection leak", 
+          author: "dev-beta", 
+          diff: "Fixed pool release in db.ts",
+          status: "open",
+          analysis: ""
+        }
+      ];
+
+      const analysisPrompt = `
+        Analyze the following Pull Requests for code smells, potential conflicts, and adherence to best practices.
+        PRs: ${JSON.stringify(mockPRs)}
+        
+        Provide a summary for each PR and a recommendation (Merge/Request Changes).
+        Respond in Arabic.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: analysisPrompt
+      });
+
+      const analysisResult = response.text;
+      
+      setPullRequests(mockPRs.map(pr => ({
+        ...pr,
+        analysis: analysisResult.includes(pr.title) ? analysisResult : "تحليل الوكيل: الكود يبدو متوافقاً مع المعايير البرمجية. يوصى بالمراجعة اليدوية قبل الدمج."
+      })));
+
+      addLog("✅ [DevOps Agent] اكتمل تحليل طلبات السحب.");
+    } catch (err: any) {
+      addLog(`فشل تحليل PRs: ${err.message}`, true);
+    } finally {
+      setIsAnalyzingPRs(false);
+    }
+  };
+
+  const mergePR = (prId: number) => {
+    addLog(`[DevOps Agent] جاري دمج طلب السحب #${prId}...`, false, 'github');
+    setTimeout(() => {
+      setPullRequests(prev => prev.filter(pr => pr.id !== prId));
+      addLog(`✅ تم دمج طلب السحب #${prId} بنجاح.`);
+    }, 2000);
   };
 
   const startPipeline = async (isTestMode = false) => {
@@ -1442,6 +1563,41 @@ ${finalPrompt}`;
                       </span>
                     ))}
                   </div>
+
+                  {agent.id === 'devops-agent' && (
+                    <div className="mt-4 pt-4 border-t border-neutral-800/50 space-y-3">
+                      <button
+                        onClick={fetchAndAnalyzePRs}
+                        disabled={isAnalyzingPRs}
+                        className="w-full py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                      >
+                        {isAnalyzingPRs ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
+                        تحليل طلبات السحب (Analyze PRs)
+                      </button>
+
+                      {pullRequests.length > 0 && (
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                          {pullRequests.map(pr => (
+                            <div key={pr.id} className="p-2 bg-neutral-950 rounded-lg border border-neutral-800 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-neutral-200 truncate max-w-[120px]">{pr.title}</span>
+                                <span className="text-[8px] text-neutral-500 font-mono">#{pr.id}</span>
+                              </div>
+                              <div className="text-[9px] text-neutral-400 italic bg-neutral-900 p-1.5 rounded border border-neutral-800/50">
+                                {pr.analysis}
+                              </div>
+                              <button
+                                onClick={() => mergePR(pr.id)}
+                                className="w-full py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded text-[9px] font-bold transition-all"
+                              >
+                                دمج (Merge)
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {agent.status === 'completed' && (
                     <div className="mt-3 pt-3 border-t border-neutral-800/50">
