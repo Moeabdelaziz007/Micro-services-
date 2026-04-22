@@ -545,7 +545,7 @@ export default function PipelineDashboard() {
   }, [subAgents, sendMessage, publish, subscribe]);
 
   const startListening = () => {
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       addLog("متصفحك لا يدعم التعرف على الصوت.", true);
       return;
@@ -1004,7 +1004,7 @@ export default function PipelineDashboard() {
       });
 
       const result = response.text;
-      setBrainstorming(result);
+      setBrainstorming(result || "");
       addLog("🤖 [أمريكي - Brain] اكتملت عملية التفكير والتحليل.");
       speakText("اكتملت عملية التحليل، لدي بعض الأفكار الجديدة");
     } catch (err: any) {
@@ -1099,7 +1099,6 @@ export default function PipelineDashboard() {
     
     // Reset statuses
     setSteps(prev => prev.map(s => ({ ...s, status: "idle" })));
-    setMcpTools(prev => prev.map(t => ({ ...t, status: "idle", error: undefined })));
 
     try {
       updateStepStatus("think", "running");
@@ -1716,7 +1715,7 @@ ${finalPrompt}`;
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-neutral-500 font-mono">[{log.timestamp}]</span>
                     <span className={`font-bold ${log.isError ? 'text-red-400' : 'text-neutral-400'}`}>
-                      {log.isError ? '❌' : '✓'} {log.tool.toUpperCase()}
+                      {log.isError ? '❌' : '✓'} {(log.tool || '').toUpperCase()}
                     </span>
                   </div>
                   <div className={`mt-1 ${log.isError ? 'text-red-300' : 'text-neutral-300'}`}>
