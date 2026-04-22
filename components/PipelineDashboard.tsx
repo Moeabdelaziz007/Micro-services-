@@ -1004,7 +1004,7 @@ export default function PipelineDashboard() {
       });
 
       const result = response.text;
-      setBrainstorming(result);
+      setBrainstorming(result || "");
       addLog("🤖 [أمريكي - Brain] اكتملت عملية التفكير والتحليل.");
       speakText("اكتملت عملية التحليل، لدي بعض الأفكار الجديدة");
     } catch (err: any) {
