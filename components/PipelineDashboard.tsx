@@ -46,11 +46,8 @@ import {
 } from "firebase/firestore";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { GoogleGenAI, Type } from "@google/genai";
 import Markdown from 'react-markdown';
 import EcosystemGraph from './EcosystemGraph';
-
-const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
 
 type Status = "idle" | "running" | "completed" | "error";
 
@@ -971,7 +968,7 @@ export default function PipelineDashboard() {
   const runBrainstorming = async () => {
     setIsBrainstorming(true);
     setBrainstorming("");
-    addLog("🤖 [أمريكي - Brain] جاري التفكير والتحليل باستخدام Gemini 3.1 Pro...");
+    addLog("🤖 [أمريكي - Brain] جاري التفكير والتحليل عبر Gemini...");
     speakText("جاري التفكير والتحليل العميق");
 
     try {
@@ -994,21 +991,23 @@ export default function PipelineDashboard() {
         Respond ONLY in Arabic, using a highly intelligent, confident, and visionary tone.
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: promptContext,
-        config: {
-          tools: [{ googleSearch: {} }],
-          toolConfig: { includeServerSideToolInvocations: true }
-        }
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: promptContext }),
       });
 
-      const result = response.text;
-      setBrainstorming(result);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Gemini route failed with ${res.status}`);
+      }
+
+      setBrainstorming(data.text || "");
       addLog("🤖 [أمريكي - Brain] اكتملت عملية التفكير والتحليل.");
       speakText("اكتملت عملية التحليل، لدي بعض الأفكار الجديدة");
-    } catch (err: any) {
-      addLog(`فشل عملية التفكير: ${err.message}`, true);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addLog(`فشل عملية التفكير: ${message}`, true);
     } finally {
       setIsBrainstorming(false);
     }
@@ -1099,7 +1098,6 @@ export default function PipelineDashboard() {
     
     // Reset statuses
     setSteps(prev => prev.map(s => ({ ...s, status: "idle" })));
-    setMcpTools(prev => prev.map(t => ({ ...t, status: "idle", error: undefined })));
 
     try {
       updateStepStatus("think", "running");
