@@ -3,6 +3,11 @@ import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
+// Server-controlled defaults. Callers cannot influence model selection or
+// tool wiring; this avoids cost/behavior surprises and tool injection.
+const MODEL = "gemini-2.5-pro";
+const TOOLS = [{ googleSearch: {} }];
+
 export async function POST(req: Request) {
   if (!apiKey) {
     return NextResponse.json(
@@ -11,7 +16,7 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { prompt?: string; model?: string; tools?: unknown[] };
+  let body: { prompt?: string };
   try {
     body = await req.json();
   } catch {
@@ -23,22 +28,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
-  const model = body.model || "gemini-2.5-pro";
-
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model,
+      model: MODEL,
       contents: prompt,
       config: {
-        tools: (body.tools as never) ?? [{ googleSearch: {} }],
+        tools: TOOLS,
         toolConfig: { includeServerSideToolInvocations: true },
       },
     });
 
     return NextResponse.json({ text: response.text ?? "" });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Log the real error server-side; never surface provider internals to the
+    // browser (could leak prompt fragments, account IDs, quota details, etc).
+    console.error("Gemini route error:", err);
+    return NextResponse.json(
+      { error: "Failed to generate content." },
+      { status: 500 }
+    );
   }
 }
